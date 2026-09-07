@@ -174,7 +174,7 @@ with sync_playwright() as p:
   results.append({'name':'Secure-context WebGPU adapter, draw validation, and persistent IndexedDB','status':'NOT_RUN','reason':'Inline about:blank runner has no secure origin; WebGPU is not exposed and IndexedDB is denied. The real DOM fallback and session library were tested instead.'})
  else:
   def persistence():
-   reset('<p>A persistent thought.</p>','Persistent document');evaluate('quire.actions.save()');page.wait_for_timeout(800);check(evaluate('!quire.repository.unavailable'));page.reload();page.wait_for_function('quire?.ready');check('A persistent thought.' in text())
+   reset('<p>A persistent thought.</p>','Persistent document');evaluate('quire.actions.save()');page.wait_for_timeout(800);check(evaluate('!quire.repository.unavailable'));page.reload();page.wait_for_function('window.quire?.ready',timeout=30000);check('A persistent thought.' in text())
   record('IndexedDB persistence survives a real-origin reload',persistence)
  record('No uncaught browser exceptions',lambda:check(not errors,str(errors)))
  report={'mode':'inline' if args.inline else 'localhost','browser':browser.version,'results':results,'uncaughtErrors':errors,'summary':{status:sum(r['status']==status for r in results) for status in ['PASS','FAIL','NOT_RUN']}}
