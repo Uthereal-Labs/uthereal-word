@@ -1,0 +1,8 @@
+node_modules/
+__pycache__/
+*.pyc
+tests/output/
+.DS_Store
+*.log
+_site/
+Quire.html

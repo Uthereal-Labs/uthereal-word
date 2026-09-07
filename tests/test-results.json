@@ -1,0 +1,283 @@
+{
+  "mode": "inline",
+  "browser": "144.0.7559.96",
+  "results": [
+    {
+      "name": "Initial sample has three paginated pages",
+      "status": "PASS",
+      "seconds": 0.003,
+      "details": null
+    },
+    {
+      "name": "All eight editing ribbon tabs render",
+      "status": "PASS",
+      "seconds": 0.332,
+      "details": [
+        [
+          null,
+          null
+        ],
+        [
+          null,
+          null
+        ],
+        [
+          null,
+          null
+        ],
+        [
+          null,
+          null
+        ],
+        [
+          null,
+          null
+        ],
+        [
+          null,
+          null
+        ],
+        [
+          null,
+          null
+        ],
+        [
+          null,
+          null
+        ]
+      ]
+    },
+    {
+      "name": "Style gallery has full-height controls",
+      "status": "PASS",
+      "seconds": 0.012,
+      "details": null
+    },
+    {
+      "name": "Renderer correctly reports its active backend",
+      "status": "PASS",
+      "seconds": 0.003,
+      "details": {
+        "backend": "DOM",
+        "drawCalls": 0,
+        "visiblePages": 0,
+        "textureBytes": 0,
+        "frames": 0,
+        "cpuMs": 0,
+        "lastError": "WebGPU is not exposed in this browser or context."
+      }
+    },
+    {
+      "name": "Native text input reaches the document model",
+      "status": "PASS",
+      "seconds": 0.56,
+      "details": null
+    },
+    {
+      "name": "Undo and redo restore document content",
+      "status": "PASS",
+      "seconds": 0.046,
+      "details": null
+    },
+    {
+      "name": "Bold, italic, and underline are real range edits",
+      "status": "PASS",
+      "seconds": 0.212,
+      "details": null
+    },
+    {
+      "name": "Toggling bold removes it without changing adjacent text",
+      "status": "PASS",
+      "seconds": 0.05,
+      "details": null
+    },
+    {
+      "name": "Underline and strike toggles isolate selected text without damaging neighbors",
+      "status": "PASS",
+      "seconds": 0.163,
+      "details": null
+    },
+    {
+      "name": "Font size dropdown formats selected text",
+      "status": "PASS",
+      "seconds": 0.084,
+      "details": null
+    },
+    {
+      "name": "Heading styles and paragraph alignment",
+      "status": "PASS",
+      "seconds": 0.151,
+      "details": null
+    },
+    {
+      "name": "List conversion and removal",
+      "status": "PASS",
+      "seconds": 0.153,
+      "details": null
+    },
+    {
+      "name": "Find spans formatting boundaries; replace-all is transactional",
+      "status": "PASS",
+      "seconds": 0.115,
+      "details": null
+    },
+    {
+      "name": "Insert table and edit rows and columns",
+      "status": "PASS",
+      "seconds": 0.301,
+      "details": null
+    },
+    {
+      "name": "Image insertion and editable size",
+      "status": "PASS",
+      "seconds": 0.51,
+      "details": null
+    },
+    {
+      "name": "Anchored comments can be posted, resolved, and deleted",
+      "status": "PASS",
+      "seconds": 0.39,
+      "details": null
+    },
+    {
+      "name": "Tracked text insertion and deletion can be rejected",
+      "status": "PASS",
+      "seconds": 0.451,
+      "details": null
+    },
+    {
+      "name": "Landscape layout and undo",
+      "status": "PASS",
+      "seconds": 0.193,
+      "details": null
+    },
+    {
+      "name": "Oversized paragraphs split and rejoin without text loss",
+      "status": "PASS",
+      "seconds": 0.308,
+      "details": {
+        "pages": 9,
+        "blocks": 9,
+        "lastMs": 112.60000000003492
+      }
+    },
+    {
+      "name": "Cross-page replacement preserves editing hosts and furniture",
+      "status": "PASS",
+      "seconds": 0.482,
+      "details": 1
+    },
+    {
+      "name": "Untrusted HTML is sanitized and external image loads are removed",
+      "status": "PASS",
+      "seconds": 0.002,
+      "details": "<p style=\"color: red;\">Safe</p><a>link</a>"
+    },
+    {
+      "name": "Native-file identifiers, layout fonts, and zoom are validated",
+      "status": "PASS",
+      "seconds": 0.003,
+      "details": null
+    },
+    {
+      "name": "Large tables and lists paginate at row/item boundaries without text loss",
+      "status": "PASS",
+      "seconds": 0.312,
+      "details": null
+    },
+    {
+      "name": "Unicode equations and data-driven chart images",
+      "status": "PASS",
+      "seconds": 0.438,
+      "details": null
+    },
+    {
+      "name": "Templates preserve prior documents in the local/session library",
+      "status": "PASS",
+      "seconds": 0.269,
+      "details": null
+    },
+    {
+      "name": "Native .quire serialization round-trip",
+      "status": "PASS",
+      "seconds": 0.073,
+      "details": {
+        "title": "Test document",
+        "html": "<h1>Portable</h1><p><strong>Bold</strong> and <em>italic</em>.</p>",
+        "valid": true
+      }
+    },
+    {
+      "name": "DOCX export has a valid ZIP and well-formed OOXML with formatting, lists, and tables",
+      "status": "PASS",
+      "seconds": 0.195,
+      "details": {
+        "bytes": 14217,
+        "parts": 8
+      }
+    },
+    {
+      "name": "Compressed DOCX import reconstructs editable content",
+      "status": "PASS",
+      "seconds": 0.068,
+      "details": "imported"
+    },
+    {
+      "name": "HTML and Markdown exporters retain document structure",
+      "status": "PASS",
+      "seconds": 0.005,
+      "details": null
+    },
+    {
+      "name": "Ink strokes are serialized and undoable",
+      "status": "PASS",
+      "seconds": 0.437,
+      "details": null
+    },
+    {
+      "name": "Page rasterization produces a clean, nonempty texture source",
+      "status": "PASS",
+      "seconds": 0.097,
+      "details": {
+        "width": 794,
+        "height": 1123,
+        "nonWhite": 4148
+      }
+    },
+    {
+      "name": "Reading/editing mode and DOM fallback are functional",
+      "status": "PASS",
+      "seconds": 0.009,
+      "details": null
+    },
+    {
+      "name": "Command search opens an actionable tool",
+      "status": "PASS",
+      "seconds": 0.155,
+      "details": null
+    },
+    {
+      "name": "Responsive layout and dark workspace",
+      "status": "PASS",
+      "seconds": 0.071,
+      "details": null
+    },
+    {
+      "name": "Secure-context WebGPU adapter, draw validation, and persistent IndexedDB",
+      "status": "NOT_RUN",
+      "reason": "Inline about:blank runner has no secure origin; WebGPU is not exposed and IndexedDB is denied. The real DOM fallback and session library were tested instead."
+    },
+    {
+      "name": "No uncaught browser exceptions",
+      "status": "PASS",
+      "seconds": 0.0,
+      "details": null
+    }
+  ],
+  "uncaughtErrors": [],
+  "summary": {
+    "PASS": 35,
+    "FAIL": 0,
+    "NOT_RUN": 1
+  }
+}
