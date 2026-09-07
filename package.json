@@ -1,0 +1,17 @@
+{
+  "name": "quire-editor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first Word-inspired document editor with a real WebGPU page compositor.",
+  "scripts": {
+    "start": "node server.mjs",
+    "build": "node build.mjs",
+    "test": "python tests/test_editor.py",
+    "build:pages": "node build-pages.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
