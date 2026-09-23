@@ -2132,6 +2132,65 @@ body.no-navigation .navigation {
     padding:15px 22px 24px
   }
 }
+/* Embedded document workspace: the host owns the application header. */
+:root{--navy:hsl(218 39% 15%);--blue:hsl(222 71% 44%);--blue-light:hsl(222 71% 96%);--ink:hsl(218 39% 15%);--muted:hsl(218 20% 45%);--line:hsl(218 25% 85%);--chrome:#fff;--workspace:hsl(218 30% 97%);--doc-accent:hsl(3 77% 66%)}
+.menu-row {
+  gap:14px;
+  overflow-x:auto;
+  scrollbar-width:none;
+  background:#fff;
+  border-bottom-color:var(--line);
+  padding-right:15px
+}
+.menu-row [hidden]{display:none!important}
+.menu-row .more-tabs-button{display:inline-flex;align-items:center;justify-content:center;width:34px;min-width:34px;padding:0}
+.menu-row .more-tabs-button svg{width:15px;height:15px;transform:rotate(-90deg)}
+.menu-row .more-tabs-button[aria-expanded="true"] svg{transform:rotate(90deg)}
+.workspace-bar{justify-content:flex-end;background:var(--workspace)}
+.ribbon-tabs button.active{color:var(--blue)}
+.ribbon-tabs button.active:after{background:var(--blue)}
+.menu-row::-webkit-scrollbar { display:none }
+.menu-row .ribbon-tabs{flex:1;min-width:0;overflow-x:auto;scrollbar-width:none}
+.menu-row .ribbon-tabs::-webkit-scrollbar{display:none}
+.menu-row .ribbon-tabs button{flex-shrink:0}
+.menu-actions { flex-shrink:0 }
+.menu-actions .document-title input {
+  color:var(--ink);
+  max-width:160px;
+  padding:4px 6px;
+  border-color:var(--line)
+}
+.menu-actions .document-title input:hover,.menu-actions .document-title input:focus {
+  background:#fff;
+  border-color:#9cb5ce
+}
+.menu-actions .save-indicator { color:var(--muted) }
+.menu-actions .quick-actions button,.menu-actions .compact-command { color:var(--ink) }
+.menu-actions .compact-command { height:28px;width:28px }
+@media (max-width:1100px) {
+  .menu-actions .save-indicator,.menu-actions #editing-mode { display:none }
+}
+@media (max-width:800px) {
+  .navigation.mobile-open { top:142px }
+}
+/* Shared Cortex editor toolbar treatment. Keep this block identical in all three editors. */
+.cortex-tabbar{box-sizing:border-box;height:43px;min-height:43px;padding:0 15px;gap:12px;overflow:hidden;background:#fff;border-bottom:1px solid hsl(218 25% 85%);font-family:Inter,"Segoe UI",Arial,sans-serif}
+.cortex-tabbar .cortex-tabstrip{gap:3px;align-items:stretch}
+.cortex-tabbar .cortex-tabstrip button{box-sizing:border-box;height:100%;min-height:0;flex:none;padding:0 12px;border:0;border-radius:0;background:transparent;color:hsl(218 39% 15%);font-size:12px;font-weight:500;line-height:1;box-shadow:none}
+.cortex-tabbar .cortex-tabstrip button:hover{background:hsl(218 20% 95%);color:hsl(222 71% 44%)}
+.cortex-tabbar .cortex-tabstrip button.active,.cortex-tabbar .cortex-tabstrip button.selected{background:transparent;color:hsl(222 71% 44%);font-weight:600}
+.cortex-tabbar .cortex-tabstrip button.active:after,.cortex-tabbar .cortex-tabstrip button.selected:after{content:"";position:absolute;left:11px;right:11px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:hsl(222 71% 44%)}
+.cortex-tabbar .cortex-tabstrip .more-tabs-button{width:34px;min-width:34px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.cortex-tabbar .cortex-tabstrip .more-tabs-button .tab-chevron{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transform:rotate(-90deg)}
+.cortex-tabbar .cortex-tabstrip .more-tabs-button[aria-expanded="true"] .tab-chevron{transform:rotate(90deg)}
+.cortex-tabbar .cortex-toolbar-actions{gap:5px}
+.cortex-tabbar .cortex-toolbar-actions .cortex-export{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;width:120px;min-width:120px;height:30px;min-height:30px;padding:0 12px;border:1px solid hsl(222 71% 44%);border-radius:6px;background:hsl(222 71% 44%);color:#fff;font-family:Inter,"Segoe UI",Arial,sans-serif;font-size:12px;font-weight:600;line-height:1;letter-spacing:0;text-transform:none;white-space:nowrap;box-shadow:none;transform:none}
+.cortex-tabbar .cortex-toolbar-actions .cortex-export:hover{background:hsl(222 71% 38%);border-color:hsl(222 71% 38%);color:#fff}
+.cortex-tabbar .cortex-toolbar-actions button.cortex-export span{display:inline;color:#fff}
+.cortex-tabbar .cortex-toolbar-actions .cortex-export .export-icon,.cortex-tabbar .cortex-toolbar-actions .cortex-export .export-chevron{display:block;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.cortex-tabbar .cortex-toolbar-actions .cortex-export .export-icon{width:16px;height:16px}
+.cortex-tabbar .cortex-toolbar-actions .cortex-export .export-chevron{width:14px;height:14px}
+.editor-area .workspace-bar,.editor-area .workspace-bar .paper-label,.editor-area .workspace-bar .paper-label:hover{background:transparent!important;border:0;box-shadow:none;backdrop-filter:none}
 @media print {
   @page {
     size:A4;

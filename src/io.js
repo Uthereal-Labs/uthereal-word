@@ -198,7 +198,7 @@ export function exportDocx(doc, root) {
     files['[Content_Types].xml'] = XML + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${[...imageTypes].map(ext => `<Default Extension="${ext}" ContentType="image/${ext === 'jpg' ? 'jpeg' : ext}"/>`).join('')}${overrides.map(([part, type]) => `<Override PartName="${part}" ContentType="${type}"/>`).join('')}</Types>`;
     files['_rels/.rels'] = XML + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rDocument" Type="${R}/officeDocument" Target="word/document.xml"/><Relationship Id="rCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`;
     files['word/_rels/document.xml.rels'] = XML + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relationships.map(r => `<Relationship Id="${r.id}" Type="${R}/${r.type}" Target="${xml(r.target)}"${r.external ? ' TargetMode="External"' : ''}/>`).join('')}</Relationships>`;
-    files['docProps/core.xml'] = XML + `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${xml(doc.title)}</dc:title><dc:creator>Quire</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${xml(doc.createdAt)}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${new Date().toISOString()}</dcterms:modified></cp:coreProperties>`;
+    files['docProps/core.xml'] = XML + `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${xml(doc.title)}</dc:title><dc:creator>Document</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${xml(doc.createdAt)}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${new Date().toISOString()}</dcterms:modified></cp:coreProperties>`;
     return new Blob([zipStore(files)], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
 }
 function parseXML(bytes) { if (!bytes)
@@ -364,7 +364,7 @@ export function importMarkdown(text) { const safe = escapeHTML(text); const inli
     return '<hr>'; return `<p>${inline(line) || '<br>'}</p>`; }).join(''); }
 export async function importFile(file) { if (file.size > 30 * 1024 * 1024)
     throw new Error('Please choose a document smaller than 30 MB.'); const ext = file.name.split('.').at(-1).toLowerCase(); if (ext === 'docx')
-    return importDocx(await file.arrayBuffer(), file.name); const text = await file.text(); if (ext === 'quire' || ext === 'json')
+    return importDocx(await file.arrayBuffer(), file.name); const text = await file.text(); if (ext === 'quire' || ext === 'document' || ext === 'json')
     return validateDocument(JSON.parse(text)); const title = file.name.replace(/\.[^.]+$/, ''); if (ext === 'html' || ext === 'htm')
     return newDocument(title, sanitizeHTML(text)); if (ext === 'md')
     return newDocument(title, sanitizeHTML(importMarkdown(text))); return newDocument(title, text.split(/\r?\n/).map(line => `<p>${escapeHTML(line) || '<br>'}</p>`).join('')); }

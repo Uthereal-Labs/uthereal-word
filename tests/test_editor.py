@@ -48,9 +48,22 @@ with sync_playwright() as p:
  def caret_end():
   evaluate('''()=>{const c=document.querySelector('#page-stack .page-content');c.focus();const r=document.createRange();r.selectNodeContents(c);r.collapse(false);getSelection().removeAllRanges();getSelection().addRange(r);quire.editor.onSelection()}''')
  def text():return evaluate("[...document.querySelectorAll('#page-stack .page-content')].map(p=>p.textContent).join('')")
- def ribbon_tab(name):page.locator(f'[data-tab="{name}"]').click()
+ def ribbon_tab(name):
+  tab=page.locator(f'[data-tab="{name}"]')
+  if tab.is_hidden():page.locator('.more-tabs-button').click()
+  tab.click()
  def action(name):page.locator(f'#ribbon [data-action="{name}"]').click()
  def ui(name):page.locator(f'[data-action="{name}"]').first.click()
+
+ def embedded_ui():
+  check(page.locator('.titlebar').count()==0)
+  check(page.locator('.cortex-tabstrip .file-tab,[data-action="commands"]').count()==0)
+  check(page.locator('#navigation').is_hidden())
+  check(page.locator('#ruler-wrap').is_hidden())
+  check(page.locator('[data-action="add-comment"],[data-action="comments"],[data-action="track-changes"],[data-action="shortcuts"]').count()==0)
+  ribbon_tab('View');action('ruler');check(page.locator('#ruler-wrap').is_visible());action('ruler');check(page.locator('#ruler-wrap').is_hidden())
+  action('toggle-navigation');check(page.locator('#navigation').is_visible());action('toggle-navigation');check(page.locator('#navigation').is_hidden());ribbon_tab('Home')
+ record('Embedded toolbar and closed startup panels',embedded_ui)
 
  record('Initial sample has three paginated pages',lambda:check(evaluate('quire.store.document.pages.length')==3))
  record('All eight editing ribbon tabs render',lambda:[(ribbon_tab(t),check(page.locator('#ribbon button').count()>0,t)) for t in ['Home','Insert','Draw','Design','Layout','References','Review','View']])
@@ -95,12 +108,6 @@ with sync_playwright() as p:
   reset();caret_end();image_path=exports/'fixture.png';from PIL import Image
   Image.new('RGB',(120,80),(88,142,151)).save(image_path);page.locator('#image-input').set_input_files(str(image_path));page.wait_for_timeout(250);check(page.locator('#page-stack img').count()==1);page.locator('#page-stack img').dblclick();page.locator('#modal input[name=width]').fill('240');page.locator('#modal button[type=submit]').click();check(evaluate("document.querySelector('#page-stack img').style.width")=='240px')
  record('Image insertion and editable size',picture)
- def comment():
-  reset();select('thoughtful');ribbon_tab('Review');action('add-comment');page.locator('#comment-text').fill('Keep this useful thought.');page.locator('#modal button[type=submit]').click();check(evaluate('quire.store.document.comments.length')==1);check(page.locator('#page-stack [data-comment]').count()==1);page.locator('[data-resolve-comment]').click();check(evaluate('quire.store.document.comments[0].resolved'));page.locator('[data-delete-comment]').click();check(evaluate('quire.store.document.comments.length')==0);check(page.locator('#page-stack [data-comment]').count()==0)
- record('Anchored comments can be posted, resolved, and deleted',comment)
- def tracking():
-  reset('<p>Hello world.</p>');select('world');page.keyboard.press('ArrowRight');action('track-changes');page.keyboard.insert_text(' today');page.wait_for_timeout(150);check(page.locator('#page-stack ins').count()>0);action('reject-changes');check('today' not in text());select('world');page.keyboard.press('Backspace');page.wait_for_timeout(100);check(page.locator('#page-stack del').count()>0);action('reject-changes');check('world' in text())
- record('Tracked text insertion and deletion can be rejected',tracking)
  def landscape():
   reset();ribbon_tab('Layout');action('orientation');page.locator('[data-orientation=landscape]').click();check(evaluate('quire.store.document.layout.width')==1123);check(evaluate('quire.store.document.layout.height')==794);check('Hello Quire' in text());evaluate('quire.actions.undo()');check(evaluate('quire.store.document.layout.width')==794)
  record('Landscape layout and undo',landscape)
@@ -160,9 +167,6 @@ with sync_playwright() as p:
  def reading():
   evaluate("quire.actions['read-mode']()");check(evaluate('quire.reading'));check(evaluate("document.querySelector('#page-stack .page-content').contentEditable")=='false');check(page.locator('#page-stack .page-content').first.is_visible());evaluate("quire.actions['edit-mode']()");check(evaluate("document.querySelector('#page-stack .page-content').contentEditable")=='true')
  record('Reading/editing mode and DOM fallback are functional',reading)
- def commands():
-  ui('commands');page.locator('#command-input').fill('page setup');page.keyboard.press('Enter');check(page.locator('#modal h2').inner_text()=='Page setup');page.locator('#modal [data-action="close-modal"]').first.click()
- record('Command search opens an actionable tool',commands)
  def responsive():
   page.set_viewport_size({'width':760,'height':900});check(page.locator('.navigation').is_hidden());evaluate("quire.actions['fit-width']()");check(evaluate('document.documentElement.style.getPropertyValue("--zoom")')!='');evaluate('quire.actions.theme()');check(evaluate("document.body.classList.contains('dark')"));page.screenshot(path=str(BASE.parent/'Quire-dark-preview.png'));evaluate('quire.actions.theme()');page.set_viewport_size({'width':1512,'height':1100})
  record('Responsive layout and dark workspace',responsive)

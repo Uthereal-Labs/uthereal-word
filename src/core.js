@@ -92,7 +92,7 @@ const safeDate = value => { const date = new Date(value); return Number.isFinite
 const safeIdentifier = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(value) ? value : uid();
 export function validateDocument(value) {
     if (!value || value.schema !== 'quire' || value.version !== 1 || !Array.isArray(value.pages) || value.pages.length > 1000)
-        throw new Error('This is not a supported Quire document.');
+        throw new Error('This is not a supported document file.');
     const base = newDocument();
     const d = { ...base, ...value, id: safeIdentifier(value.id), title: String(value.title || 'Untitled document').slice(0, 120), layout: { ...base.layout, ...value.layout }, comments: Array.isArray(value.comments) ? value.comments.slice(0, 5000).map(c => ({ id: safeIdentifier(c.id), text: String(c.text || '').slice(0, 20000), quote: String(c.quote || '').slice(0, 1000), author: String(c.author || 'You').slice(0, 100), time: safeDate(c.time), resolved: !!c.resolved })) : [], view: { ...base.view, ...value.view } };
     for (const k of ['width', 'height'])

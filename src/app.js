@@ -34,6 +34,7 @@ const stack = html => `<div class="ribbon-stack">${html}</div>`;
 function renderRibbon(tab = activeTab) {
     activeTab = tab;
     $$('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    $('.more-tabs-button').classList.toggle('active', !['Home', 'Insert'].includes(tab) && $('.more-tabs-button').getAttribute('aria-expanded') === 'false');
     ribbon.setAttribute('aria-label', tab + ' ribbon');
     let html = '';
     if (tab === 'Home') {
@@ -47,7 +48,7 @@ function renderRibbon(tab = activeTab) {
         html += group('Pages', tallButton('file', 'file', 'Cover page') + tallButton('insert-page', 'page', 'Blank page') + tallButton('page-break', 'break', 'Page break'));
         html += group('Tables', tallButton('insert-table', 'table', 'Table') + stack(stackButton('table-add-row', 'plus', 'Add row') + stackButton('table-add-column', 'columns', 'Add column') + stackButton('table-delete', 'trash', 'Delete table')));
         html += group('Illustrations', tallButton('image', 'image', 'Picture') + tallButton('chart', 'layout', 'Chart'));
-        html += group('Links & comments', tallButton('link', 'link', 'Link') + tallButton('add-comment', 'comment', 'Comment'));
+        html += group('Links', tallButton('link', 'link', 'Link'));
         html += group('Header & footer', tallButton('header', 'layout', 'Header') + tallButton('footer', 'page', 'Page numbers'));
         html += group('Text & symbols', tallButton('date', 'history', 'Date & time') + tallButton('symbol', 'spark', 'Symbol') + tallButton('equation', 'pen', 'Equation') + tallButton('horizontal-rule', 'minus', 'Divider'));
     }
@@ -55,7 +56,7 @@ function renderRibbon(tab = activeTab) {
         html += group('Tools', tallButton('draw-select', 'target', 'Select') + tallButton('draw-pen', 'pen', 'Pen') + tallButton('draw-highlight', 'highlight', 'Highlighter') + tallButton('draw-eraser', 'eraser', 'Eraser'));
         html += group('Ink appearance', `<div class="font-controls">${row(colors.slice(0, 8).map(c => `<button class="color-swatch" data-ink-color="${c}" style="background:${c}" title="Ink ${c}"></button>`).join(''))}${row(`<span style="font-size:11px">Thickness</span><select id="ink-width" aria-label="Ink thickness">${[1, 2, 3, 5, 8, 12, 18].map(n => `<option${n === inkWidth ? ' selected' : ''} value="${n}">${n} px</option>`).join('')}</select>`)} </div>`);
         html += group('Manage', tallButton('clear-ink', 'trash', 'Clear page ink'));
-        html += group('About ink', `<div style="font-size:11px;line-height:1.8;color:#80909d;padding:0 10px">Draw directly on the page.<br>Ink is included in .quire files and printed output.</div>`);
+        html += group('About ink', `<div style="font-size:11px;line-height:1.8;color:#80909d;padding:0 10px">Draw directly on the page.<br>Ink is included in .document files and printed output.</div>`);
     }
     else if (tab === 'Design') {
         html += group('Document palette', `<div class="ribbon-row">${[['#28766e', 'Sage'], ['#306b9b', 'Ocean'], ['#715c8f', 'Iris'], ['#a75f4e', 'Terracotta'], ['#344052', 'Slate']].map(([color, name]) => `<button class="style-card" data-accent="${color}" title="${name} document accent"><span style="display:flex;gap:3px"><i style="display:block;width:17px;height:21px;background:${color}"></i><i style="display:block;width:17px;height:21px;background:${color};opacity:.45"></i><i style="display:block;width:17px;height:21px;background:${color};opacity:.18"></i></span><span class="style-label">${name}</span></button>`).join('')}</div>`);
@@ -76,9 +77,6 @@ function renderRibbon(tab = activeTab) {
     }
     else if (tab === 'Review') {
         html += group('Proofing', tallButton('spelling', 'checkcircle', 'Spelling') + tallButton('insights', 'file', 'Word count') + tallButton('read-aloud', 'mic', 'Read aloud'));
-        html += group('Comments', tallButton('add-comment', 'comment', 'New comment') + tallButton('comments', 'comment', 'Show comments'));
-        html += group('Tracking', tallButton('track-changes', 'history', store.document.trackChanges ? 'Tracking on' : 'Track changes', store.document.trackChanges ? 'style="background:#e5f0e9;color:#4e8065"' : '') + tallButton('accept-changes', 'check', 'Accept all') + tallButton('reject-changes', 'close', 'Reject all'));
-        html += group('Revisions', tallButton('review-changes', 'eye', 'Review changes'));
     }
     else if (tab === 'View') {
         html += group('Document views', tallButton('edit-mode', 'page', 'Print layout') + tallButton('read-mode', 'book', 'Reading mode'));
@@ -108,7 +106,7 @@ function applyLayout() {
         s.setProperty('--' + key, value);
     $('#document-title').value = store.document.title;
     $('#document-title').style.width = Math.min(280, Math.max(100, store.document.title.length * 6.6 + 5)) + 'px';
-    document.title = `Quire — ${store.document.title}`;
+    document.title = `${store.document.title} — Document`;
     $('#workspace-name').textContent = store.document.title.toUpperCase();
     $('.paper-label').innerHTML = `${escapeHTML(l.size)} <span>·</span> ${l.orientation === 'landscape' ? 'Landscape' : 'Portrait'} ${icon('chevron', 12)}`;
     $('#ruler .ruler-ticks').innerHTML = Array.from({ length: 15 }, (_, i) => `<span>${i === 0 ? '' : i}</span>`).join('');
@@ -173,13 +171,13 @@ async function saveNow(showMessage = false) { editor.commit('typing', true); isS
         }
     }
     if (showMessage)
-        toast(result.persisted ? 'Saved on this device.' : 'Browser storage is unavailable. Export a .quire copy before closing.', !result.persisted);
+        toast(result.persisted ? 'Saved on this device.' : 'Browser storage is unavailable. Export a .document copy before closing.', !result.persisted);
     return true;
 }
 catch (error) {
     $('#save-indicator').innerHTML = icon('info', 17) + '<span>Not saved — export a copy</span>';
     if (showMessage)
-        toast('Local saving failed. Export a .quire copy to keep your work.', true);
+        toast('Local saving failed. Export a .document copy to keep your work.', true);
     console.warn('Save failed:', error.message);
     return false;
 }
@@ -256,7 +254,6 @@ function renderPanel() {
         const changes = $$('ins[data-change],del[data-change]', root);
         body.innerHTML = `<p class="panel-subtitle">${store.document.trackChanges ? 'New typed text and text deletions are being marked.' : 'Turn on Track changes to mark new text edits.'} Formatting and structural edits are not tracked.</p><button class="secondary" data-action="track-changes" style="width:100%">${icon('history', 15)}${store.document.trackChanges ? 'Turn tracking off' : 'Turn tracking on'}</button>` + changes.map((c, i) => `<div class="comment-card"><div style="color:${c.tagName === 'INS' ? '#4e8966' : '#a86165'};font-size:10px;margin-bottom:5px">${c.tagName === 'INS' ? 'INSERTED' : 'DELETED'} TEXT</div><div>${escapeHTML(c.textContent)}</div><div class="comment-actions"><button data-change-index="${i}" data-accept="true">Accept</button><button data-change-index="${i}" data-accept="false">Reject</button></div></div>`).join('') + (!changes.length ? `<div class="empty-panel">${icon('checkcircle', 35)}<strong>All clear.</strong>No pending text revisions.</div>` : '');
     }
-    $('#comment-count').textContent = store.document.comments.filter(c => !c.resolved).length;
     renderer.schedule();
 }
 function togglePanel(name) { activePanel = activePanel === name ? null : name; renderPanel(); }
@@ -399,8 +396,9 @@ Object.assign(actions, {
         toast('There is no ink on this page.');
         return;
     } formModal('Clear this page’s ink', `<p>This removes all pen strokes from page ${currentPage}. You can undo the change.</p>`, () => { slot.ink = []; editor.commit('clear ink'); renderInk(); }, 'Clear ink'); },
-    'export': anchor => showPopover(menuItem('export-docx', 'file', 'Word document', '.docx') + menuItem('export-quire', 'save', 'Quire document', '.quire') + menuItem('export-html', 'file', 'Web page', '.html') + menuItem('export-md', 'file', 'Markdown', '.md') + menuItem('export-txt', 'file', 'Plain text', '.txt') + '<hr>' + menuItem('print', 'print', 'Print / Save as PDF', 'Ctrl P'), anchor),
-    'export-quire': () => { editor.commit('typing', true); downloadFile(JSON.stringify(store.document, null, 2), store.document.title + '.quire', 'application/json'); toast('Quire document exported.'); },
+    'export': anchor => showPopover(menuItem('export-docx', 'file', 'Word document', '.docx') + menuItem('export-quire', 'save', 'Document file', '.document') + menuItem('export-html', 'file', 'Web page', '.html') + menuItem('export-md', 'file', 'Markdown', '.md') + menuItem('export-txt', 'file', 'Plain text', '.txt') + '<hr>' + menuItem('print', 'print', 'Print / Save as PDF', 'Ctrl P'), anchor),
+    'more-tabs': anchor => { const expanded = anchor.getAttribute('aria-expanded') === 'true'; anchor.setAttribute('aria-expanded', String(!expanded)); anchor.setAttribute('aria-label', expanded ? 'Show more tabs' : 'Hide extra tabs'); $$('.ribbon-tabs [data-tab][hidden], .ribbon-tabs [data-tab].extra-tab').forEach(button => { button.hidden = expanded; button.classList.add('extra-tab'); }); anchor.classList.toggle('active', expanded && !['Home', 'Insert'].includes(activeTab)); },
+    'export-quire': () => { editor.commit('typing', true); downloadFile(JSON.stringify(store.document, null, 2), store.document.title + '.document', 'application/json'); toast('Document exported.'); },
     'export-docx': () => { editor.commit('typing', true); downloadFile(exportDocx(store.document, root), store.document.title + '.docx'); toast('Word document exported. Advanced layout may differ.'); },
     'export-html': () => { editor.commit('typing', true); downloadFile(exportHTML(store.document, root), store.document.title + '.html', 'text/html'); toast('Self-contained HTML document exported.'); },
     'export-md': () => { downloadFile(exportMarkdown(root), store.document.title + '.md', 'text/markdown'); toast('Markdown exported.'); },
@@ -410,15 +408,10 @@ Object.assign(actions, {
     file: async () => { let recent = []; try {
         recent = (await repository.list()).filter(d => d.id !== store.document.id).slice(0, 4);
     }
-    catch { } showModal('Your workspace', `<p class="file-intro">A fresh page. A clearer idea.</p><p class="file-caption">Start with a little structure, or make space for something entirely new.</p><div class="template-grid">${[['blank', 'Blank document', 'Start with possibility'], ['report', 'The clarity report', 'An editorial report'], ['brief', 'Project brief', 'Give your team a direction'], ['notes', 'Meeting notes', 'Keep the good ideas']].map(([id, title, description]) => `<button class="template-card" data-template="${id}"><div class="template-preview"><div class="mini-paper">${id === 'blank' ? '<span style="display:block;text-align:center;margin-top:24px;color:#bcc9d4;font-size:22px">+</span>' : `<b>${id === 'report' ? 'A little<br>clarity.' : id === 'brief' ? 'A clear<br>beginning.' : 'Notes worth<br>keeping.'}</b><i></i><i style="width:80%"></i>${id === 'report' ? '<div class="mini-accent"></div>' : ''}<i></i><i></i><i style="width:65%"></i>`}</div></div><div class="template-description">${title}<span>${description}</span></div></button>`).join('')}</div>${recent.length ? '<div class="popover-label" style="padding-left:0">Recent documents on this device</div>' + recent.map(d => `<button class="menu-item" style="display:flex;justify-content:flex-start;padding:7px 0;width:100%;font-size:12px" data-open-document="${d.id}">${icon('file', 16)}${escapeHTML(d.title)}<small style="margin-left:auto;color:#93a1ae">${new Date(d.modifiedAt).toLocaleDateString()}</small></button>`).join('') : ''}<div class="file-bottom"><button class="secondary" data-action="open">${icon('folder', 16)}Open a document</button><button class="secondary" data-action="export-quire">${icon('download', 16)}Save a portable copy</button></div><p style="font-size:10px;margin:13px 0 0">Open .docx, .quire, .html, .md, or .txt. Your work stays in this browser unless you export it.</p>`, { wide: true }); },
-    shortcuts: () => showModal('A little faster, at your fingertips', `<p>Use ⌘ in place of Ctrl on macOS.</p>${[['Bold', 'Ctrl B'], ['Italic', 'Ctrl I'], ['Underline', 'Ctrl U'], ['Undo', 'Ctrl Z'], ['Redo', 'Ctrl Shift Z'], ['Save locally', 'Ctrl S'], ['Find in document', 'Ctrl F'], ['Find and replace', 'Ctrl H'], ['Command search', 'Ctrl K'], ['Insert link', 'Ctrl Shift K'], ['Page break', 'Ctrl Enter'], ['New comment', 'Ctrl Alt M'], ['Print / PDF', 'Ctrl P'], ['Close panels / exit focus', 'Esc']].map(([label, key]) => `<div class="shortcut-row"><span>${label}</span><kbd>${key}</kbd></div>`).join('')}`),
-    about: () => { const s = renderer.stats; showModal('Quire · words, with room to breathe', `<p>A local-first document editor. Familiar tools, a quieter workspace, and a real WebGPU page compositor.</p><div class="insight-grid"><div><strong style="font-size:20px">${s.backend}</strong><span>Active compositor</span></div><div><strong>${s.drawCalls}</strong><span>Last frame draw calls</span></div><div><strong>${(s.textureBytes / 1048576).toFixed(1)} MB</strong><span>Reading texture cache</span></div><div><strong>${s.visiblePages}</strong><span>Visible pages</span></div></div><p><strong>Editing mode</strong><br>WebGPU composes page surfaces. Browser DOM layout handles text shaping, caret, selection, accessibility, and IME.</p><p><strong>Reading mode</strong><br>Visible pages are rasterized by the browser and uploaded as GPU textures. The renderer is demand-driven and keeps at most eight page textures.</p><p><strong>Interoperability</strong><br>DOCX supports a documented subset of OOXML. Advanced Word fields, complex tables, section layouts, mail merge, and real-time collaboration are not implemented.</p>${s.lastError ? `<div class="tip-box"><strong>Renderer diagnostic</strong>${escapeHTML(s.lastError)}</div>` : ''}<div class="tip-box"><strong>No cloud account required</strong>Autosave uses IndexedDB on this device. Export a .quire file for a portable, lossless copy, including ink and comments.</div><p style="font-size:10px;margin-top:16px">Quire 1.0 · Plain HTML, CSS & JavaScript · No runtime dependencies<br>Independent application. Not affiliated with Microsoft.</p>`); },
-    commands: () => { const commands = [['file', 'file', 'New document', ''], ['open', 'folder', 'Open a document', ''], ['save', 'save', 'Save on this device', 'Ctrl S'], ['export-docx', 'download', 'Export a Word document', ''], ['export-quire', 'save', 'Export a Quire document', ''], ['print', 'print', 'Print or save as PDF', 'Ctrl P'], ['find', 'search', 'Find in document', 'Ctrl F'], ['replace', 'replace', 'Find and replace', 'Ctrl H'], ['insert-table', 'table', 'Insert a table', ''], ['image', 'image', 'Insert a picture', ''], ['add-comment', 'comment', 'Add a comment', 'Ctrl Alt M'], ['page-break', 'break', 'Insert a page break', 'Ctrl Enter'], ['track-changes', 'history', 'Toggle track changes', ''], ['insights', 'checkcircle', 'Document insights', ''], ['page-setup', 'layout', 'Page setup', ''], ['read-mode', 'book', 'GPU reading mode', ''], ['edit-mode', 'pen', 'Editing mode', ''], ['focus', 'target', 'Focus mode', ''], ['theme', 'moon', 'Toggle dark workspace', ''], ['about', 'gpu', 'Renderer information', '']]; showModal('Find your next move', `<input id="command-input" placeholder="Search commands…" autocomplete="off" aria-label="Search commands"><div class="command-list">${commands.map(([action, name, label, hint]) => `<button data-command="${action}" data-command-label="${label.toLowerCase()}">${icon(name, 17)}${label}<small>${hint}</small></button>`).join('')}</div>`); $('#command-input').addEventListener('input', e => $$('[data-command]', modal).forEach(b => b.hidden = !b.dataset.commandLabel.includes(e.target.value.toLowerCase()))); $('#command-input').addEventListener('keydown', e => { if (e.key === 'Enter') {
-        e.preventDefault();
-        const btn = $('[data-command]:not([hidden])', modal);
-        btn?.click();
-    } }); }
+    catch { } showModal('Your workspace', `<p class="file-intro">A fresh page. A clearer idea.</p><p class="file-caption">Start with a little structure, or make space for something entirely new.</p><div class="template-grid">${[['blank', 'Blank document', 'Start with possibility'], ['report', 'The clarity report', 'An editorial report'], ['brief', 'Project brief', 'Give your team a direction'], ['notes', 'Meeting notes', 'Keep the good ideas']].map(([id, title, description]) => `<button class="template-card" data-template="${id}"><div class="template-preview"><div class="mini-paper">${id === 'blank' ? '<span style="display:block;text-align:center;margin-top:24px;color:#bcc9d4;font-size:22px">+</span>' : `<b>${id === 'report' ? 'A little<br>clarity.' : id === 'brief' ? 'A clear<br>beginning.' : 'Notes worth<br>keeping.'}</b><i></i><i style="width:80%"></i>${id === 'report' ? '<div class="mini-accent"></div>' : ''}<i></i><i></i><i style="width:65%"></i>`}</div></div><div class="template-description">${title}<span>${description}</span></div></button>`).join('')}</div>${recent.length ? '<div class="popover-label" style="padding-left:0">Recent documents on this device</div>' + recent.map(d => `<button class="menu-item" style="display:flex;justify-content:flex-start;padding:7px 0;width:100%;font-size:12px" data-open-document="${d.id}">${icon('file', 16)}${escapeHTML(d.title)}<small style="margin-left:auto;color:#93a1ae">${new Date(d.modifiedAt).toLocaleDateString()}</small></button>`).join('') : ''}<div class="file-bottom"><button class="secondary" data-action="open">${icon('folder', 16)}Open a document</button><button class="secondary" data-action="export-quire">${icon('download', 16)}Save a portable copy</button></div><p style="font-size:10px;margin:13px 0 0">Open .docx, .document, .html, .md, or .txt. Your work stays in this browser unless you export it.</p>`, { wide: true }); },
+    about: () => { const s = renderer.stats; showModal('Document renderer', `<div class="insight-grid"><div><strong style="font-size:20px">${s.backend}</strong><span>Active compositor</span></div><div><strong>${s.drawCalls}</strong><span>Last frame draw calls</span></div><div><strong>${(s.textureBytes / 1048576).toFixed(1)} MB</strong><span>Reading texture cache</span></div><div><strong>${s.visiblePages}</strong><span>Visible pages</span></div></div>${s.lastError ? `<div class="tip-box"><strong>Renderer diagnostic</strong>${escapeHTML(s.lastError)}</div>` : ''}`); },
 });
+for (const action of ['comments', 'add-comment', 'review-changes', 'track-changes', 'accept-changes', 'reject-changes']) delete actions[action];
 function runSearch(term) { searchTerm = term; search.find(term); $('#search-status').hidden = !term; $('#search-status').textContent = search.matches.length ? `${search.matches.length} result${search.matches.length === 1 ? '' : 's'} · Enter for next` : 'No results'; if (term) {
     navTab = 'results';
     $$('[data-nav]').forEach(b => b.classList.toggle('active', b.dataset.nav === navTab));
@@ -561,12 +554,6 @@ document.addEventListener('click', async (e) => {
             }
             return;
         }
-        if (el.dataset.command) {
-            const action = el.dataset.command;
-            closeModal();
-            await actions[action]?.($('.command-search'));
-            return;
-        }
         if (el.dataset.resolveComment) {
             store.transact('resolve comment', d => { const c = d.comments.find(c => c.id === el.dataset.resolveComment); if (c)
                 c.resolved = !c.resolved; });
@@ -652,10 +639,7 @@ catch (error) {
 } });
 root.addEventListener('dblclick', e => { const image = e.target.closest('.page-content img'); if (!image)
     return; selectedImage = image; formModal('Picture size & description', `<label>Width in pixels</label><input name="width" type="number" min="20" max="1200" value="${Math.round(image.getBoundingClientRect().width / (zoom / 100))}" required><label>Alternative text</label><input name="alt" value="${escapeHTML(image.alt)}">`, ({ width, alt }) => editor.transaction('resize image', () => { image.style.width = width + 'px'; image.style.height = 'auto'; image.alt = alt; }), 'Apply'); });
-root.addEventListener('click', e => { const comment = e.target.closest('[data-comment]'); if (comment) {
-    activePanel = 'comments';
-    renderPanel();
-} const link = e.target.closest('a'); if (link) {
+root.addEventListener('click', e => { const link = e.target.closest('a'); if (link) {
     e.preventDefault();
     if (link.hash) {
         const target = root.querySelector('#' + CSS.escape(link.hash.slice(1)));
@@ -736,7 +720,7 @@ document.addEventListener('keydown', e => { const mod = e.ctrlKey || e.metaKey, 
     renderer.schedule();
     return;
 } if (!mod || inModal)
-    return; const hotkeys = { s: 'save', p: 'print', f: 'find', h: 'replace', k: e.shiftKey ? 'link' : 'commands' }; if (hotkeys[key]) {
+    return; const hotkeys = { s: 'save', p: 'print', f: 'find', h: 'replace' }; if (key === 'k' && e.shiftKey) hotkeys.k = 'link'; if (hotkeys[key]) {
     e.preventDefault();
     actions[hotkeys[key]]?.();
     return;
@@ -756,10 +740,6 @@ else if (['b', 'i', 'u'].includes(key)) {
 else if (e.key === 'Enter') {
     e.preventDefault();
     actions['page-break']();
-}
-else if (key === 'm' && e.altKey) {
-    e.preventDefault();
-    actions['add-comment']();
 }
 else if (key === 'a' && e.target.closest('.page-content')) {
     e.preventDefault();
