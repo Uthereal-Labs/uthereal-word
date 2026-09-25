@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.mjs",
     "build": "node build.mjs",
-    "test": "python tests/test_editor.py",
+    "test": "python tests/test_editor.py && python tests/test_startup.py",
     "build:pages": "node build-pages.mjs"
   },
   "engines": {

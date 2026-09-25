@@ -68,6 +68,10 @@ export class PageRasterizer {
 export class GPUPageRenderer extends Emitter {
     constructor(canvas, viewport, root) { super(); this.canvas = canvas; this.viewport = viewport; this.root = root; this.ready = false; this.reading = false; this.framePending = false; this.disposed = false; this.revision = 0; this.cache = new Map(); this.pending = new Map(); this.failed = new Map(); this.maxTextures = 8; this.capacity = 0; this.rasterizer = new PageRasterizer(); this.stats = { backend: 'DOM', drawCalls: 0, visiblePages: 0, textureBytes: 0, frames: 0, cpuMs: 0, lastError: null }; this.schedule = this.schedule.bind(this); this.viewport.addEventListener('scroll', this.schedule, { passive: true }); this.observer = new ResizeObserver(this.schedule); this.observer.observe(viewport); this.observer.observe(root); this.resizeWindow = () => this.schedule(); window.addEventListener('resize', this.resizeWindow); this.themeObserver = new MutationObserver(() => this.schedule()); this.themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] }); }
     async initialize() {
+        if (new URLSearchParams(window.location.search).get('renderer') === 'dom') {
+            this.fallback('DOM renderer selected');
+            return false;
+        }
         let scope = false;
         try {
             if (!navigator.gpu)
