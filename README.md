@@ -179,6 +179,9 @@ npm run build
 Start the server in another terminal with `npm start`, then run:
 
 ```sh
+# Regression: DOM mode edits, saves, and exports despite an unusable GPU API.
+python tests/test_startup.py
+
 # Actual-origin editing, UI, export/import, and persistence tests.
 python tests/test_editor.py --url http://localhost:4173
 
