@@ -19,6 +19,76 @@ const editor = new EditorEngine(root, store, paginator);
 const renderer = new GPUPageRenderer($('#gpu-canvas'), viewport, root);
 const search = new DocumentSearch(root);
 const statistics = new StatisticsWorker();
+let referenceStack = null;
+const hostedWorkspace = new URLSearchParams(location.search).has('utherealParentOrigin');
+function nativeExportBlocked() { if (!hostedWorkspace) return false; toast('Export from the workspace to include current references.', true); return true; }
+function setReferencePresentation(presentation) {
+    if (presentation === null) { referenceStack?.remove(); referenceStack = null; renderer.invalidate(); return { page_count: 0 }; }
+    referenceStack?.remove(); referenceStack = null;
+    if (!presentation || !Array.isArray(presentation.entries) || !presentation.entries.every(entry =>
+        Number.isInteger(entry.number) && entry.number > 0 && typeof entry.text === 'string' && entry.text.trim()))
+        throw new Error('Invalid reference presentation');
+    const next = document.createElement('div');
+    next.className = 'page-stack reference-stack';
+    next.dataset.revision = String(presentation.id_revision ?? '');
+    next.setAttribute('aria-label', 'Read-only references');
+    root.after(next);
+    let page = null, content = null;
+    const addPage = () => {
+        const slot = document.createElement('div'), paper = document.createElement('article');
+        slot.className = 'paper-slot'; paper.className = 'paper';
+        paper.setAttribute('aria-label', 'References page');
+        content = document.createElement('div');
+        content.className = 'page-content reference-content';
+        content.contentEditable = 'false';
+        content.setAttribute('aria-readonly', 'true');
+        const heading = document.createElement('h1');
+        heading.textContent = page ? 'References (continued)' : 'References';
+        content.append(heading); paper.append(content); slot.append(paper); next.append(slot); page = slot;
+    };
+    try {
+        if (presentation.entries.length) addPage();
+        for (const entry of presentation.entries) {
+            const marker = `[${entry.number}]`;
+            const words = (`${marker} ${entry.text.trim()}`).split(/\s+/);
+            let line = document.createElement('p'); content.append(line);
+            for (const word of words) {
+                const previous = line.textContent;
+                line.textContent = previous ? `${previous} ${word}` : word;
+                if (paginator.used(content) <= content.clientHeight - 2) continue;
+                line.textContent = previous;
+                const moveMarker = previous === marker && content.children.length > 2;
+                if (moveMarker || previous !== marker) {
+                    if (moveMarker || !previous) line.remove();
+                    addPage(); line = document.createElement('p');
+                    if (moveMarker) line.textContent = marker;
+                    content.append(line);
+                }
+                let remaining = (line.textContent ? ' ' : '') + word;
+                while (remaining) {
+                    const start = line.textContent;
+                    line.textContent = start + remaining;
+                    if (paginator.used(content) <= content.clientHeight - 2) break;
+                    const characters = Array.from(remaining);
+                    let low = 1, high = characters.length, best = 0;
+                    while (low <= high) {
+                        const middle = (low + high) >> 1;
+                        line.textContent = start + characters.slice(0, middle).join('');
+                        if (paginator.used(content) <= content.clientHeight - 2) { best = middle; low = middle + 1; }
+                        else high = middle - 1;
+                    }
+                    if (!best) throw new Error(`Reference [${entry.number}] cannot fit on a page`);
+                    line.textContent = start + characters.slice(0, best).join('');
+                    remaining = characters.slice(best).join('').trimStart();
+                    if (remaining) { addPage(); line = document.createElement('p'); content.append(line); }
+                }
+            }
+        }
+        referenceStack?.remove(); referenceStack = next;
+        renderer.invalidate();
+        return { page_count: next.children.length };
+    } catch (error) { next.remove(); renderer.invalidate(); throw error; }
+}
 let activeTab = 'Home', navTab = 'headings', activePanel = null, zoom = store.document.view.zoom || 85, reading = false, stats = { words: 0, characters: 0, noSpaces: 0, readingMinutes: 1, paragraphs: 0, sentences: 0 }, searchTerm = '', currentPage = 1, isSaving = false, formatPainter = null, inkMode = null, inkColor = '#245c88', inkWidth = 3, activeStroke = null, modalBookmark = null, selectedImage = null;
 const actions = {};
 const colors = ['#263f52', '#306b9b', '#28766e', '#4b8d72', '#82984d', '#d3a24e', '#bd7652', '#af5e69', '#111827', '#556575', '#8d9aa5', '#c9d1d8', '#e8edf2', '#ffffff', '#fff0a8', '#f1c6d0', '#daf0eb', '#dce9f8', '#e3def3', '#f9e6d5', '#88bdcf', '#91b7aa', '#bed092', '#f1d17a'];
@@ -121,6 +191,8 @@ function applyLayout() {
 function setZoom(value, save = true) { zoom = Math.min(180, Math.max(40, Math.round(value))); document.documentElement.style.setProperty('--zoom', zoom / 100); $('#zoom').value = zoom; $('#zoom-label').textContent = zoom + '%'; if (save)
     store.document.view.zoom = zoom; renderer.schedule(); }
 function docText() { return $$('.page-content', root).map(p => p.innerText.replaceAll('\u200b', '')).join('\n'); }
+function referenceText() { return referenceStack ? $$('.reference-content', referenceStack).map(page => page.innerText).join('\n\n') : ''; }
+function referenceMarkdown() { return referenceStack ? '\n\n' + $$('.reference-content', referenceStack).map(page => [...page.children].map(el => el.tagName === 'H1' ? `# ${el.textContent}` : el.textContent).join('\n\n')).join('\n\n') + '\n' : ''; }
 function scheduleStats() { statistics.update(docText()); }
 statistics.on('stats', value => { stats = value; $('#word-count').textContent = value.words.toLocaleString() + ' words'; if (activePanel === 'insights')
     renderPanel(); });
@@ -185,10 +257,10 @@ finally {
     isSaving = false;
 } }
 const autosave = debounce(() => saveNow(), 700);
-store.on('change', ({ kind }) => { if (!['typing'].includes(kind))
+store.on('change', ({ kind }) => { setReferencePresentation(null); if (!['typing'].includes(kind))
     applyLayout(); $('#save-indicator').innerHTML = icon('cloud', 17) + '<span>Saving…</span>'; $$('[data-action="undo"]').forEach(b => b.disabled = !store.history.length); $$('[data-action="redo"]').forEach(b => b.disabled = !store.future.length); scheduleStats(); navUpdate(); updatePageStatus(); renderer.invalidate(); renderInk(); if (activePanel)
     renderPanel(); autosave(); });
-store.on('replace', ({ kind }) => { const bookmark = kind === 'open' ? null : bookmarkSelection(root); editor.savedRange = null; if (kind === 'open') {
+store.on('replace', ({ kind }) => { setReferencePresentation(null); const bookmark = kind === 'open' ? null : bookmarkSelection(root); editor.savedRange = null; if (kind === 'open') {
     getSelection().removeAllRanges();
     searchTerm = '';
     search.find('');
@@ -199,7 +271,8 @@ store.on('replace', ({ kind }) => { const bookmark = kind === 'open' ? null : bo
     $$('[data-nav]').forEach(b => b.classList.toggle('active', b.dataset.nav === navTab));
 } applyLayout(); paginator.render(); paginator.reflow(); store.document.pages = paginator.getPages(); renderInk(); restoreBookmark(root, bookmark); setReading(reading); setZoom(store.document.view.zoom || zoom, false); renderRibbon(); });
 editor.on('layout', () => { paginator.updateFurniture(); renderInk(); renderer.invalidate(); });
-editor.on('input', debounce(scheduleStats, 150));
+const scheduleInputStats = debounce(scheduleStats, 150);
+editor.on('input', () => { setReferencePresentation(null); scheduleInputStats(); });
 function changeLayout(values) { if (reading)
     setReading(false); editor.commit('typing', true); store.transact('page layout', d => { Object.assign(d.layout, values); applyLayout(); paginator.reflow(); d.pages = paginator.getPages(); }); }
 function setReading(value) { reading = !!value; editor.readOnly = reading; document.body.classList.toggle('reading', reading); if (reading)
@@ -396,14 +469,14 @@ Object.assign(actions, {
         toast('There is no ink on this page.');
         return;
     } formModal('Clear this page’s ink', `<p>This removes all pen strokes from page ${currentPage}. You can undo the change.</p>`, () => { slot.ink = []; editor.commit('clear ink'); renderInk(); }, 'Clear ink'); },
-    'export': anchor => showPopover(menuItem('export-docx', 'file', 'Word document', '.docx') + menuItem('export-quire', 'save', 'Document file', '.document') + menuItem('export-html', 'file', 'Web page', '.html') + menuItem('export-md', 'file', 'Markdown', '.md') + menuItem('export-txt', 'file', 'Plain text', '.txt') + '<hr>' + menuItem('print', 'print', 'Print / Save as PDF', 'Ctrl P'), anchor),
+    'export': anchor => { if (nativeExportBlocked()) return; showPopover(menuItem('export-docx', 'file', 'Word document', '.docx') + menuItem('export-quire', 'save', 'Document file', '.document') + menuItem('export-html', 'file', 'Web page', '.html') + menuItem('export-md', 'file', 'Markdown', '.md') + menuItem('export-txt', 'file', 'Plain text', '.txt') + '<hr>' + menuItem('print', 'print', 'Print / Save as PDF', 'Ctrl P'), anchor); },
     'more-tabs': anchor => { const expanded = anchor.getAttribute('aria-expanded') === 'true'; anchor.setAttribute('aria-expanded', String(!expanded)); anchor.setAttribute('aria-label', expanded ? 'Show more tabs' : 'Hide extra tabs'); $$('.ribbon-tabs [data-tab][hidden], .ribbon-tabs [data-tab].extra-tab').forEach(button => { button.hidden = expanded; button.classList.add('extra-tab'); }); anchor.classList.toggle('active', expanded && !['Home', 'Insert'].includes(activeTab)); },
-    'export-quire': () => { editor.commit('typing', true); downloadFile(JSON.stringify(store.document, null, 2), store.document.title + '.document', 'application/json'); toast('Document exported.'); },
-    'export-docx': () => { editor.commit('typing', true); downloadFile(exportDocx(store.document, root), store.document.title + '.docx'); toast('Word document exported. Advanced layout may differ.'); },
-    'export-html': () => { editor.commit('typing', true); downloadFile(exportHTML(store.document, root), store.document.title + '.html', 'text/html'); toast('Self-contained HTML document exported.'); },
-    'export-md': () => { downloadFile(exportMarkdown(root), store.document.title + '.md', 'text/markdown'); toast('Markdown exported.'); },
-    'export-txt': () => { downloadFile(docText(), store.document.title + '.txt', 'text/plain'); toast('Plain text exported.'); },
-    print: () => { editor.commit('typing', true); paginator.reflow(); setTimeout(() => window.print(), 80); },
+    'export-quire': () => { if (nativeExportBlocked()) return; editor.commit('typing', true); downloadFile(JSON.stringify(store.document, null, 2), store.document.title + '.document', 'application/json'); toast('Document exported.'); },
+    'export-docx': () => { if (nativeExportBlocked()) return; editor.commit('typing', true); downloadFile(exportDocx(store.document, root, referenceStack), store.document.title + '.docx'); toast('Word document exported. Advanced layout may differ.'); },
+    'export-html': () => { if (nativeExportBlocked()) return; editor.commit('typing', true); downloadFile(exportHTML(store.document, root, referenceStack), store.document.title + '.html', 'text/html'); toast('Self-contained HTML document exported.'); },
+    'export-md': () => { if (nativeExportBlocked()) return; downloadFile(exportMarkdown(root) + referenceMarkdown(), store.document.title + '.md', 'text/markdown'); toast('Markdown exported.'); },
+    'export-txt': () => { if (nativeExportBlocked()) return; downloadFile(docText() + (referenceStack ? '\n\n' + referenceText() : ''), store.document.title + '.txt', 'text/plain'); toast('Plain text exported.'); },
+    print: () => { if (nativeExportBlocked()) return; editor.commit('typing', true); paginator.reflow(); setTimeout(() => window.print(), 80); },
     open: () => $('#file-input').click(),
     file: async () => { let recent = []; try {
         recent = (await repository.list()).filter(d => d.id !== store.document.id).slice(0, 4);
@@ -789,4 +862,4 @@ if (innerWidth < 1000)
     setZoom(Math.min(85, (viewport.clientWidth - 50) / store.document.layout.width * 100), false);
 await renderer.initialize();
 await saveNow();
-window.quire = { store, editor, paginator, renderer, search, repository, actions, statistics, createDocument: newDocument, importFile, sanitizeHTML, ready: true, get stats() { return stats; }, get reading() { return reading; }, setZoom, setReading, runSearch, exportDocx: () => exportDocx(store.document, root), exportHTML: () => exportHTML(store.document, root), exportMarkdown: () => exportMarkdown(root) };
+window.quire = { store, editor, paginator, renderer, search, repository, actions, statistics, createDocument: newDocument, importFile, sanitizeHTML, ready: true, get stats() { return stats; }, get reading() { return reading; }, get referenceRevision() { return referenceStack?.dataset.revision || null; }, setZoom, setReading, runSearch, setReferencePresentation, exportDocx: () => exportDocx(store.document, root, referenceStack), exportHTML: () => exportHTML(store.document, root, referenceStack), exportMarkdown: () => exportMarkdown(root) + referenceMarkdown() };

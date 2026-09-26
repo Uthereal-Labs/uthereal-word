@@ -829,6 +829,12 @@ h1,h2,h3,p {
   background:transparent;
   box-shadow:none
 }
+.reference-stack { margin-top:28px; pointer-events:none }
+.reference-stack .paper, .gpu-ready .reference-stack .paper {
+  background:#fff;
+  box-shadow:0 2px 8px #283f5814,0 0 0 1px #dce2e8
+}
+.reference-stack .reference-content { cursor:default; user-select:text }
 .page-content {
   font-family:var(--doc-font);
   font-size:var(--doc-body-size);

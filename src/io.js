@@ -129,7 +129,7 @@ const rgbHex = s => { if (!s || s === 'transparent' || s === 'rgba(0, 0, 0, 0)')
     return null; const m = s.match(/\d+/g); if (s.startsWith('#'))
     return s.slice(1).padEnd(6, '0'); if (m?.length >= 3)
     return m.slice(0, 3).map(n => Number(n).toString(16).padStart(2, '0')).join(''); return null; };
-export function exportDocx(doc, root) {
+export function exportDocx(doc, root, referenceRoot = null) {
     const files = {}, relationships = [{ id: 'rStyles', type: 'styles', target: 'styles.xml' }, { id: 'rNumbering', type: 'numbering', target: 'numbering.xml' }];
     let imageId = 0, changeId = 0;
     const imageTypes = new Set();
@@ -174,7 +174,9 @@ export function exportDocx(doc, root) {
         return [...el.children].map(li => { const clone = li.cloneNode(true); clone.querySelectorAll('ul,ol').forEach(n => n.remove()); return paragraph(li, { numId: el.tagName === 'OL' ? 2 : 1, level: Math.min(level, 8) }); }).join(''); if (el.tagName === 'HR')
         return '<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="4" w:color="CEDCE0"/></w:pBdr></w:pPr></w:p>'; if (el.tagName === 'DIV' && el.querySelector(':scope > div,:scope > p,:scope > h1,:scope > h2,:scope > h3'))
         return [...el.childNodes].map(n => block(n, level)).join(''); return paragraph(el); }
-    const paragraphs = [...root.querySelectorAll('.page-content')].flatMap(p => [...p.childNodes]).map(el => block(el)).join('');
+    const paragraphs = [...root.querySelectorAll('.page-content')].flatMap(p => [...p.childNodes]).map(el => block(el)).join('') +
+        (referenceRoot ? [...referenceRoot.querySelectorAll('.reference-content')].map(page =>
+            '<w:p><w:r><w:br w:type="page"/></w:r></w:p>' + [...page.childNodes].map(el => block(el)).join('')).join('') : '');
     const l = doc.layout;
     files['word/document.xml'] = XML + `<w:document xmlns:w="${W}" xmlns:r="${R}" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${paragraphs}<w:sectPr>${l.header ? '<w:headerReference w:type="default" r:id="rHeader"/>' : ''}${l.footer ? '<w:footerReference w:type="default" r:id="rFooter"/>' : ''}<w:pgSz w:w="${Math.round(l.width * 15)}" w:h="${Math.round(l.height * 15)}"${l.orientation === 'landscape' ? ' w:orient="landscape"' : ''}/><w:pgMar w:top="${Math.round(l.top * 15)}" w:right="${Math.round(l.right * 15)}" w:bottom="${Math.round(l.bottom * 15)}" w:left="${Math.round(l.left * 15)}" w:header="360" w:footer="360" w:gutter="0"/></w:sectPr></w:body></w:document>`;
     files['word/styles.xml'] = XML + `<w:styles xmlns:w="${W}"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Segoe UI" w:hAnsi="Segoe UI"/><w:sz w:val="22"/></w:rPr></w:rPrDefault></w:docDefaults>${[['Normal', 'Normal', 22, '3D4D5C'], ['Title', 'Title', 64, '263F52'], ['Heading1', 'heading 1', 40, '254964'], ['Heading2', 'heading 2', 30, '254964'], ['Heading3', 'heading 3', 26, '306B74'], ['Quote', 'Quote', 26, '45666B']].map(([id, name, size, color], i) => `<w:style w:type="paragraph" w:styleId="${id}"${i === 0 ? ' w:default="1"' : ''}><w:name w:val="${name}"/>${i ? '<w:basedOn w:val="Normal"/>' : ''}<w:pPr>${id.startsWith('Heading') ? `<w:keepNext/><w:outlineLvl w:val="${Number(id.slice(-1)) - 1}"/>` : ''}</w:pPr><w:rPr><w:color w:val="${color}"/><w:sz w:val="${size}"/>${id === 'Quote' ? '<w:i/>' : ''}</w:rPr></w:style>`).join('')}</w:styles>`;
@@ -329,14 +331,14 @@ export async function importDocx(buffer, name) {
     d.pages[0].html = box.innerHTML;
     return validateDocument(d);
 }
-export function exportHTML(doc, root) { const styles = []; for (const sheet of document.styleSheets) {
+export function exportHTML(doc, root, referenceRoot = null) { const styles = []; for (const sheet of document.styleSheets) {
     try {
         for (const rule of sheet.cssRules)
             if (rule.selectorText?.includes('.page-content'))
                 styles.push(rule.cssText);
     }
     catch { }
-} const l = doc.layout; return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHTML(doc.title)}</title><style>:root{--doc-accent:${l.accent}}*{box-sizing:border-box}body{margin:0;background:#eef1f4;color:#3d4d5c}.export-document{max-width:${l.width}px;margin:30px auto;padding:${l.top}px ${l.right}px ${l.bottom}px ${l.left}px;background:white;box-shadow:0 3px 24px #233b5712}.page-content{font-family:${escapeHTML(l.font)},Arial,sans-serif;font-size:${l.fontSize}px;line-height:${l.lineHeight}}${styles.join('\n')}.page-content{font-family:${escapeHTML(l.font)},Arial,sans-serif;font-size:${l.fontSize}px;line-height:${l.lineHeight};height:auto;cursor:auto}.page-break{break-after:page;height:0}@media print{body{background:white}.export-document{padding:0;margin:0;box-shadow:none}@page{size:${l.width}px ${l.height}px;margin:${l.top}px ${l.right}px ${l.bottom}px ${l.left}px}}</style></head><body><main class="export-document"><div class="page-content">${[...root.querySelectorAll('.page-content')].map(p => p.innerHTML).join('')}</div></main></body></html>`; }
+} const l = doc.layout; return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHTML(doc.title)}</title><style>:root{--doc-accent:${l.accent}}*{box-sizing:border-box}body{margin:0;background:#eef1f4;color:#3d4d5c}.export-document{max-width:${l.width}px;margin:30px auto;padding:${l.top}px ${l.right}px ${l.bottom}px ${l.left}px;background:white;box-shadow:0 3px 24px #233b5712}.page-content{font-family:${escapeHTML(l.font)},Arial,sans-serif;font-size:${l.fontSize}px;line-height:${l.lineHeight}}${styles.join('\n')}.page-content{font-family:${escapeHTML(l.font)},Arial,sans-serif;font-size:${l.fontSize}px;line-height:${l.lineHeight};height:auto;cursor:auto}.page-break{break-after:page;height:0}@media print{body{background:white}.export-document{padding:0;margin:0;box-shadow:none}@page{size:${l.width}px ${l.height}px;margin:${l.top}px ${l.right}px ${l.bottom}px ${l.left}px}}</style></head><body><main class="export-document"><div class="page-content">${[...root.querySelectorAll('.page-content')].map(p => p.innerHTML).join('')}${referenceRoot ? [...referenceRoot.querySelectorAll('.reference-content')].map(p => `<div class="page-break"></div>${p.innerHTML}`).join('') : ''}</div></main></body></html>`; }
 export function exportMarkdown(root) { const render = n => { if (n.nodeType === 3)
     return n.textContent.replaceAll('\u200b', ''); if (n.nodeType !== 1)
     return ''; const t = n.tagName, inner = [...n.childNodes].map(render).join(''); if (/^H[1-6]$/.test(t))
