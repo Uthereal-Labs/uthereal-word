@@ -120,6 +120,10 @@ The renderer can be inspected through the **About** dialog at the bottom of the 
 | `server.mjs` | Dependency-free local static server. |
 | `tests/test_editor.py` | Browser integration, file-format, and renderer-preparation checks. |
 
+Native documents carry `grounding_contract: 2`. Authored paragraphs/headings, list items, and cells have durable `data-uth-id` identities and optional `data-uth-grounding` annotations; paginated paragraph fragments repeat the logical identity and store `data-uth-offset` in UTF-16 units. A cell owns all descendant text; list-item text excludes nested items. Manual text edits invalidate the entire owning unit, while native Undo restores its recorded annotations. Complete same-artifact clipboard copies use an in-memory handle and allocate fresh object/annotation identities. Partial, external, and cross-artifact copies carry content only. Imported files receive fresh identities and no grounding; exports strip private grounding metadata. In-memory history is cleared on document load.
+
+The `quire.grounding` API exposes logical `inspect()`, validated `assign()`, atomic staged `applyDocument()`, and race-safe `ack()` methods. Save acknowledgements update matching live, history, and native clipboard annotations without replacing text or creating an Undo step. Evidence claims and provenance are validated by the hosting service.
+
 The internal document representation is a versioned, serializable collection of page HTML fragments with explicit layout, comment, and ink data. It is not a CRDT, immutable rich-text AST, or clone of Word's document object model. The separation into store, editor, paginator, renderer, and IO makes those individual subsystems replaceable.
 
 ### Developer API
@@ -184,6 +188,9 @@ python tests/test_startup.py
 
 # Actual-origin editing, UI, export/import, and persistence tests.
 python tests/test_editor.py --url http://localhost:4173
+
+# Native object, offsets, typing/history, clipboard, and grounding regressions.
+python tests/test_grounding.py --url http://localhost:4173
 
 # Also require WebGPU initialization, reading textures, and GPU draws.
 python tests/test_editor.py --url http://localhost:4173 --gpu

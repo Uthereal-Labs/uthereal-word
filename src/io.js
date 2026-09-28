@@ -1,4 +1,5 @@
 /** Native, dependency-free IO. ZIP STORE writer, bounded ZIP/DEFLATE reader, OOXML subset. */
+import { publicHTML } from './grounding.js';
 import { uid, escapeHTML, safeURL, sanitizeHTML, newDocument, validateDocument } from './core.js';
 const encoder = new TextEncoder(), decoder = new TextDecoder();
 const crcTable = Uint32Array.from({ length: 256 }, (_, n) => { for (let k = 0; k < 8; k++)
@@ -338,7 +339,7 @@ export function exportHTML(doc, root, referenceRoot = null) { const styles = [];
                 styles.push(rule.cssText);
     }
     catch { }
-} const l = doc.layout; return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHTML(doc.title)}</title><style>:root{--doc-accent:${l.accent}}*{box-sizing:border-box}body{margin:0;background:#eef1f4;color:#3d4d5c}.export-document{max-width:${l.width}px;margin:30px auto;padding:${l.top}px ${l.right}px ${l.bottom}px ${l.left}px;background:white;box-shadow:0 3px 24px #233b5712}.page-content{font-family:${escapeHTML(l.font)},Arial,sans-serif;font-size:${l.fontSize}px;line-height:${l.lineHeight}}${styles.join('\n')}.page-content{font-family:${escapeHTML(l.font)},Arial,sans-serif;font-size:${l.fontSize}px;line-height:${l.lineHeight};height:auto;cursor:auto}.page-break{break-after:page;height:0}@media print{body{background:white}.export-document{padding:0;margin:0;box-shadow:none}@page{size:${l.width}px ${l.height}px;margin:${l.top}px ${l.right}px ${l.bottom}px ${l.left}px}}</style></head><body><main class="export-document"><div class="page-content">${[...root.querySelectorAll('.page-content')].map(p => p.innerHTML).join('')}${referenceRoot ? [...referenceRoot.querySelectorAll('.reference-content')].map(p => `<div class="page-break"></div>${p.innerHTML}`).join('') : ''}</div></main></body></html>`; }
+} const l = doc.layout; return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHTML(doc.title)}</title><style>:root{--doc-accent:${l.accent}}*{box-sizing:border-box}body{margin:0;background:#eef1f4;color:#3d4d5c}.export-document{max-width:${l.width}px;margin:30px auto;padding:${l.top}px ${l.right}px ${l.bottom}px ${l.left}px;background:white;box-shadow:0 3px 24px #233b5712}.page-content{font-family:${escapeHTML(l.font)},Arial,sans-serif;font-size:${l.fontSize}px;line-height:${l.lineHeight}}${styles.join('\n')}.page-content{font-family:${escapeHTML(l.font)},Arial,sans-serif;font-size:${l.fontSize}px;line-height:${l.lineHeight};height:auto;cursor:auto}.page-break{break-after:page;height:0}@media print{body{background:white}.export-document{padding:0;margin:0;box-shadow:none}@page{size:${l.width}px ${l.height}px;margin:${l.top}px ${l.right}px ${l.bottom}px ${l.left}px}}</style></head><body><main class="export-document"><div class="page-content">${[...root.querySelectorAll('.page-content')].map(p => publicHTML(p.innerHTML)).join('')}${referenceRoot ? [...referenceRoot.querySelectorAll('.reference-content')].map(p => `<div class="page-break"></div>${p.innerHTML}`).join('') : ''}</div></main></body></html>`; }
 export function exportMarkdown(root) { const render = n => { if (n.nodeType === 3)
     return n.textContent.replaceAll('\u200b', ''); if (n.nodeType !== 1)
     return ''; const t = n.tagName, inner = [...n.childNodes].map(render).join(''); if (/^H[1-6]$/.test(t))
@@ -367,6 +368,6 @@ export function importMarkdown(text) { const safe = escapeHTML(text); const inli
 export async function importFile(file) { if (file.size > 30 * 1024 * 1024)
     throw new Error('Please choose a document smaller than 30 MB.'); const ext = file.name.split('.').at(-1).toLowerCase(); if (ext === 'docx')
     return importDocx(await file.arrayBuffer(), file.name); const text = await file.text(); if (ext === 'quire' || ext === 'document' || ext === 'json')
-    return validateDocument(JSON.parse(text)); const title = file.name.replace(/\.[^.]+$/, ''); if (ext === 'html' || ext === 'htm')
+    return validateDocument(JSON.parse(text), { external: true }); const title = file.name.replace(/\.[^.]+$/, ''); if (ext === 'html' || ext === 'htm')
     return newDocument(title, sanitizeHTML(text)); if (ext === 'md')
     return newDocument(title, sanitizeHTML(importMarkdown(text))); return newDocument(title, text.split(/\r?\n/).map(line => `<p>${escapeHTML(line) || '<br>'}</p>`).join('')); }

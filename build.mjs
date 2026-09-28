@@ -3,9 +3,9 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 const base = new URL('.', import.meta.url);
 let html = await readFile(new URL('index.html', base), 'utf8');
 const css = await readFile(new URL('src/styles.css', base), 'utf8');
-const modules = ['icons', 'core', 'renderer', 'templates', 'io', 'app'];
+const modules = ['icons', 'grounding', 'core', 'renderer', 'templates', 'io', 'app'];
 // Isolated module scopes avoid collisions while preserving named exports.
-const exports = { icons: ['icons', 'icon'], core: ['uid', 'escapeHTML', 'debounce', 'textNodes', 'safeURL', 'sanitizeHTML', 'Emitter', 'newDocument', 'validateDocument', 'DocumentStore', 'DocumentRepository', 'bookmarkSelection', 'restoreBookmark', 'caretAt', 'Paginator', 'EditorEngine', 'DocumentSearch', 'StatisticsWorker'], renderer: ['PageRasterizer', 'GPUPageRenderer'], templates: ['clarityReport', 'projectBrief', 'meetingNotes', 'templates'], io: ['crc32', 'zipStore', 'readZip', 'downloadFile', 'exportDocx', 'importDocx', 'exportHTML', 'exportMarkdown', 'importMarkdown', 'importFile'], app: [] };
+const exports = { grounding: ['groundingElements', 'objectText', 'validOrigin', 'validateAnnotations', 'stripGrounding', 'publicHTML', 'normalizeGrounding', 'logicalGroundingUnits', 'documentGroundingUnits', 'normalizeDocumentGrounding', 'GroundingLifecycle'], icons: ['icons', 'icon'], core: ['uid', 'escapeHTML', 'debounce', 'textNodes', 'safeURL', 'sanitizeHTML', 'Emitter', 'newDocument', 'validateDocument', 'DocumentStore', 'DocumentRepository', 'bookmarkSelection', 'restoreBookmark', 'caretAt', 'Paginator', 'EditorEngine', 'DocumentSearch', 'StatisticsWorker'], renderer: ['PageRasterizer', 'GPUPageRenderer'], templates: ['clarityReport', 'projectBrief', 'meetingNotes', 'templates'], io: ['crc32', 'zipStore', 'readZip', 'downloadFile', 'exportDocx', 'importDocx', 'exportHTML', 'exportMarkdown', 'importMarkdown', 'importFile'], app: [] };
 let js = '(async()=>{\nconst modules={};\n';
 for (const name of modules) {
     let source = await readFile(new URL(`src/${name}.js`, base), 'utf8');

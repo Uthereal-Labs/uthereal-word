@@ -1,4 +1,5 @@
 /** Quire core. Native input + explicit Range transactions, without execCommand. */
+import { GroundingLifecycle, normalizeGrounding, normalizeDocumentGrounding, publicHTML } from './grounding.js';
 export const uid = () => globalThis.crypto?.randomUUID?.() || `q-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 export const escapeHTML = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const debounce = (fn, wait) => { let timer; const f = (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), wait); }; f.cancel = () => clearTimeout(timer); return f; };
@@ -10,7 +11,7 @@ export function safeURL(value, image = false) { const s = String(value || '').tr
 const allowedTags = new Set('P DIV SPAN H1 H2 H3 H4 H5 H6 B STRONG I EM U S STRIKE SUB SUP BR HR UL OL LI BLOCKQUOTE TABLE THEAD TBODY TFOOT TR TD TH IMG A MARK INS DEL FIGURE FIGCAPTION'.split(' '));
 const allowedStyles = new Set('font-family font-size font-weight font-style text-decoration text-decoration-line text-align text-indent line-height letter-spacing color background-color vertical-align margin-left margin-right margin-top margin-bottom padding border border-top border-bottom border-left border-right border-color border-width border-style width height max-width border-collapse list-style-type white-space'.split(' '));
 const allowedClasses = new Set('cover-title lead eyebrow byline metric-grid metric metric-value metric-label metric-note doc-header section-kicker callout caption chapter-title page-break'.split(' '));
-export function sanitizeHTML(html) {
+export function sanitizeHTML(html, { native = false } = {}) {
     const source = new DOMParser().parseFromString(String(html), 'text/html');
     const target = document.createElement('div');
     function copy(node, parent) {
@@ -38,9 +39,11 @@ export function sanitizeHTML(html) {
                 el.classList.add(c);
         if (/^endnote-\d+$/.test(node.id))
             el.id = node.id;
-        for (const key of ['data-flow', 'data-comment', 'data-change', 'data-kind'])
+        for (const key of [...(native ? ['data-flow'] : []), 'data-comment', 'data-change', 'data-kind'])
             if (node.hasAttribute(key))
                 el.setAttribute(key, node.getAttribute(key).slice(0, 100));
+        if (native) for (const key of ['data-uth-id', 'data-uth-offset', 'data-uth-grounding'])
+            if (node.hasAttribute(key)) el.setAttribute(key, node.getAttribute(key));
         if (node.tagName === 'A') {
             const href = safeURL(node.getAttribute('href'));
             if (href) {
@@ -87,12 +90,13 @@ export class Emitter {
     emit(name, value) { this.handlers.get(name)?.forEach(fn => fn(value)); }
 }
 const cloneDocument = doc => ({ ...doc, layout: { ...doc.layout }, pages: doc.pages.map(p => ({ ...p, ink: (p.ink || []).map(s => ({ ...s, points: s.points.map(p => [...p]) })) })), comments: doc.comments.map(c => ({ ...c })), view: { ...doc.view } });
-export function newDocument(title = 'Untitled document', html = '<p><br></p>') { return { schema: 'quire', version: 1, id: uid(), title, createdAt: new Date().toISOString(), modifiedAt: new Date().toISOString(), layout: { size: 'A4', orientation: 'portrait', width: 794, height: 1123, top: 70, bottom: 65, left: 74, right: 74, header: '', footer: true, accent: '#28766e', font: 'Segoe UI', fontSize: 14, lineHeight: 1.65 }, pages: [{ id: uid(), html, ink: [] }], comments: [], view: { zoom: 85 }, trackChanges: false }; }
+export function newDocument(title = 'Untitled document', html = '<p><br></p>') { return normalizeDocumentGrounding({ schema: 'quire', version: 1, grounding_contract: 2, id: uid(), title, createdAt: new Date().toISOString(), modifiedAt: new Date().toISOString(), layout: { size: 'A4', orientation: 'portrait', width: 794, height: 1123, top: 70, bottom: 65, left: 74, right: 74, header: '', footer: true, accent: '#28766e', font: 'Segoe UI', fontSize: 14, lineHeight: 1.65 }, pages: [{ id: uid(), html: publicHTML(html), ink: [] }], comments: [], view: { zoom: 85 }, trackChanges: false }, { fresh: true }); }
 const safeDate = value => { const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toISOString() : new Date().toISOString(); };
 const safeIdentifier = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(value) ? value : uid();
-export function validateDocument(value) {
+export function validateDocument(value, { external = false } = {}) {
     if (!value || value.schema !== 'quire' || value.version !== 1 || !Array.isArray(value.pages) || value.pages.length > 1000)
         throw new Error('This is not a supported document file.');
+    if (!external && value.grounding_contract !== 2) throw new Error('This document requires the native grounding lifecycle format (contract 2).');
     const base = newDocument();
     const d = { ...base, ...value, id: safeIdentifier(value.id), title: String(value.title || 'Untitled document').slice(0, 120), layout: { ...base.layout, ...value.layout }, comments: Array.isArray(value.comments) ? value.comments.slice(0, 5000).map(c => ({ id: safeIdentifier(c.id), text: String(c.text || '').slice(0, 20000), quote: String(c.quote || '').slice(0, 1000), author: String(c.author || 'You').slice(0, 100), time: safeDate(c.time), resolved: !!c.resolved })) : [], view: { ...base.view, ...value.view } };
     for (const k of ['width', 'height'])
@@ -119,10 +123,11 @@ export function validateDocument(value) {
     d.layout.lineHeight = Math.max(1, Math.min(3, Number(d.layout.lineHeight) || 1.65));
     d.layout.header = String(d.layout.header).slice(0, 300);
     d.layout.accent = /^#[0-9a-f]{6}$/i.test(d.layout.accent) ? d.layout.accent : '#28766e';
-    d.pages = value.pages.map(p => ({ id: uid(), html: sanitizeHTML(p.html || '<p><br></p>'), ink: Array.isArray(p.ink) ? p.ink.slice(0, 5000).filter(s => Array.isArray(s.points)).map(s => ({ id: uid(), color: /^#[0-9a-f]{6}$/i.test(s.color) ? s.color : '#245c88', width: Math.min(30, Math.max(1, Number(s.width) || 3)), opacity: Math.max(.05, Math.min(1, Number(s.opacity) || 1)), points: s.points.slice(0, 20000).filter(p => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])).map(p => [p[0], p[1]]) })) : [] }));
+    d.pages = value.pages.map(p => ({ id: uid(), html: sanitizeHTML(p.html || '<p><br></p>', { native: !external }), ink: Array.isArray(p.ink) ? p.ink.slice(0, 5000).filter(s => Array.isArray(s.points)).map(s => ({ id: uid(), color: /^#[0-9a-f]{6}$/i.test(s.color) ? s.color : '#245c88', width: Math.min(30, Math.max(1, Number(s.width) || 3)), opacity: Math.max(.05, Math.min(1, Number(s.opacity) || 1)), points: s.points.slice(0, 20000).filter(p => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])).map(p => [p[0], p[1]]) })) : [] }));
     if (!d.pages.length)
         d.pages = [{ id: uid(), html: '<p><br></p>', ink: [] }];
-    return d;
+    if (external) { d.id = uid(); for (const key of Object.keys(d)) if (!(key in base)) delete d[key]; }
+    return normalizeDocumentGrounding(d, { fresh: external });
 }
 export class DocumentStore extends Emitter {
     constructor(doc) { super(); this.document = doc; this.history = []; this.future = []; this.lastCommitTime = 0; this.lastKind = ''; this.revision = 0; this.cleanRevision = 0; }
@@ -135,7 +140,7 @@ export class DocumentStore extends Emitter {
         return false; this.future.push({ doc: cloneDocument(this.document), kind: this.lastKind }); const prev = this.history.pop(); this.document = prev.doc; this.lastKind = ''; this.revision++; this.emit('replace', { kind: 'undo' }); this.emit('change', { kind: 'undo', revision: this.revision }); return true; }
     redo() { if (!this.future.length)
         return false; this.history.push({ doc: cloneDocument(this.document), kind: 'redo' }); this.document = this.future.pop().doc; this.lastKind = ''; this.revision++; this.emit('replace', { kind: 'redo' }); this.emit('change', { kind: 'redo', revision: this.revision }); return true; }
-    replace(doc) { this.document = doc; this.history = []; this.future = []; this.lastKind = ''; this.revision++; this.emit('replace', { kind: 'open' }); this.emit('change', { kind: 'open', revision: this.revision }); }
+    replace(doc) { if (doc.grounding_contract !== 2) throw new Error('This document requires the native grounding lifecycle format (contract 2).'); this.document = doc; this.history = []; this.future = []; this.lastKind = ''; this.revision++; this.emit('replace', { kind: 'open' }); this.emit('change', { kind: 'open', revision: this.revision }); }
 }
 export class DocumentRepository {
     constructor() { this.db = null; this.queue = Promise.resolve(); this.memory = new Map(); this.currentId = null; this.unavailable = false; }
@@ -299,6 +304,7 @@ export class Paginator {
         const flow = block.dataset.flow || uid();
         block.dataset.flow = flow;
         tail.dataset.flow = flow;
+        if (block.hasAttribute('data-uth-id')) tail.dataset.uthOffset = String(Number(block.dataset.uthOffset || 0) + cut);
         return tail;
     }
     reflow() {
@@ -312,6 +318,7 @@ export class Paginator {
             this.busy = false;
             return;
         }
+        normalizeGrounding(this.root);
         const blocks = [];
         for (const slot of oldSlots) {
             const content = slot.querySelector('.page-content');
@@ -333,7 +340,7 @@ export class Paginator {
         // Rejoin fragments from the last layout pass before measuring the new layout.
         for (let i = 1; i < blocks.length; i++) {
             const a = blocks[i - 1], b = blocks[i];
-            if (a.dataset.flow && a.dataset.flow === b.dataset.flow && a.tagName === b.tagName) {
+            if (a.dataset.flow && a.dataset.flow === b.dataset.flow && a.tagName === b.tagName && (['TABLE', 'UL', 'OL'].includes(a.tagName) || a.dataset.uthId === b.dataset.uthId)) {
                 if (a.tagName === 'TABLE') {
                     for (const row of [...b.rows]) {
                         const tag = row.parentElement.tagName.toLowerCase();
@@ -413,6 +420,7 @@ export class Paginator {
                 c.innerHTML = '<p><br></p>';
         }
         this.updateFurniture();
+        normalizeGrounding(this.root);
         restoreBookmark(this.root, mark);
         this.stats = { pages: this.root.children.length, blocks: blocks.length, lastMs: performance.now() - t };
         this.busy = false;
@@ -427,13 +435,14 @@ export class EditorEngine extends Emitter {
         this.savedRange = null;
         this.composing = false;
         this.readOnly = false;
+        this.grounding = new GroundingLifecycle(this);
         this.pendingCommit = debounce(() => this.commit('typing', true), 300);
         this.onSelection = () => { const s = getSelection(); if (s?.rangeCount && root.contains(s.anchorNode) && (s.anchorNode.nodeType === 1 ? s.anchorNode : s.anchorNode.parentElement)?.closest('.page-content')) {
             this.savedRange = s.getRangeAt(0).cloneRange();
             this.emit('selection', this.getFormat());
         } };
         document.addEventListener('selectionchange', this.onSelection);
-        root.addEventListener('compositionstart', () => { this.composing = true; this.pendingCommit.cancel(); this.compositionStart = bookmarkSelection(root); });
+        root.addEventListener('compositionstart', () => { this.commit('typing', true); this.grounding.invalidateRange(this.range(), 'insertCompositionText'); this.composing = true; this.pendingCommit.cancel(); this.compositionStart = bookmarkSelection(root); });
         root.addEventListener('compositionend', () => { this.composing = false; if (this.store.document.trackChanges && this.compositionStart) {
             const end = bookmarkSelection(root);
             if (end && end.focus > this.compositionStart.anchor) {
@@ -447,6 +456,8 @@ export class EditorEngine extends Emitter {
         root.addEventListener('input', () => { if (!this.composing)
             this.pendingCommit(); this.emit('input'); });
         root.addEventListener('paste', e => this.paste(e));
+        root.addEventListener('copy', e => this.grounding.copy(e));
+        root.addEventListener('cut', e => { if (this.readOnly) return; this.grounding.copy(e); this.transaction('cut', () => this.deleteSelection(this.range())); });
         root.addEventListener('drop', e => { e.preventDefault(); this.emit('drop', e); });
     }
     range() { const s = getSelection(); if (s?.rangeCount && this.root.contains(s.anchorNode) && (s.anchorNode.nodeType === 1 ? s.anchorNode : s.anchorNode.parentElement)?.closest('.page-content'))
@@ -454,12 +465,12 @@ export class EditorEngine extends Emitter {
         return this.savedRange.cloneRange(); const c = this.root.querySelector('.page-content'); c.focus({ preventScroll: true }); const r = document.createRange(); r.selectNodeContents(c); r.collapse(false); return r; }
     focusRange() { const r = this.range(), s = getSelection(); (r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement)?.closest('.page-content')?.focus({ preventScroll: true }); s.removeAllRanges(); s.addRange(r); return r; }
     commit(kind = 'edit', coalesce = false) { if (this.composing)
-        return; this.pendingCommit.cancel(); const before = this.paginator.getPages(); const changed = JSON.stringify(before) !== JSON.stringify(this.store.document.pages); if (!changed && kind === 'typing')
-        return; this.paginator.reflow(); const pages = this.paginator.getPages(); this.store.transact(kind, d => { d.pages = pages; }, { coalesce }); this.emit('layout'); }
+        return; if (this.grounding.batchDepth) return; this.pendingCommit.cancel(); this.grounding.reconcile(); const before = this.paginator.getPages(); const changed = JSON.stringify(before) !== JSON.stringify(this.store.document.pages); if (!changed && kind === 'typing')
+        return; this.paginator.reflow(); const pages = this.paginator.getPages(); this.store.transact(kind, d => { d.pages = pages; }, { coalesce }); this.grounding.assigned.clear(); this.emit('layout'); }
     transaction(kind, fn) { if (this.readOnly) {
         this.emit('notice', 'Switch to Editing to change your document.');
         return;
-    } this.pendingCommit.cancel(); this.focusRange(); fn(); this.commit(kind, kind === 'tracked insertion' || kind === 'tracked deletion'); }
+    } this.pendingCommit.cancel(); if (!this.grounding.batchDepth && !this.handlingInput) this.commit('typing', true); this.focusRange(); fn(); this.commit(kind, kind === 'tracked insertion' || kind === 'tracked deletion'); }
     deleteSelection(range) { const getContent = n => (n.nodeType === 1 ? n : n.parentElement)?.closest('.page-content'), start = getContent(range.startContainer), end = getContent(range.endContainer); if (!start || !end || start === end) {
         range.deleteContents();
         range.collapse(true);
@@ -491,7 +502,7 @@ export class EditorEngine extends Emitter {
                 Object.assign(wrap.style, style);
                 for (const [k, v] of Object.entries(attrs))
                     wrap.setAttribute(k, v);
-                wrap.append('\u200b');
+                wrap.append(document.createTextNode(''));
                 r.insertNode(wrap);
                 caretAt(wrap);
                 this.savedRange = getSelection().getRangeAt(0).cloneRange();
@@ -591,11 +602,11 @@ export class EditorEngine extends Emitter {
         t += ' ' + getComputedStyle(e).textDecorationLine;
         e = e.parentElement;
     } return t; })(); return { bold: Number(s.fontWeight) >= 600, italic: s.fontStyle === 'italic', underline: deco.includes('underline'), strikeThrough: deco.includes('line-through'), subscript: s.verticalAlign === 'sub', superscript: s.verticalAlign === 'super', fontFamily: s.fontFamily.split(',')[0].replaceAll('"', ''), fontSize: Math.round(parseFloat(s.fontSize) * .75), align: s.textAlign, block: n.closest('h1,h2,h3,p,blockquote,li')?.tagName.toLowerCase() || 'p' }; }
-    blocks() { const r = this.range(); const all = [...this.root.querySelectorAll('.page-content p,.page-content h1,.page-content h2,.page-content h3,.page-content blockquote,.page-content li,.page-content td,.page-content th')]; let selected = all.filter(el => r.intersectsNode(el)); if (r.collapsed) {
+    blocks() { const r = this.range(); const all = [...this.root.querySelectorAll('.page-content p,.page-content h1,.page-content h2,.page-content h3,.page-content h4,.page-content h5,.page-content h6,.page-content blockquote,.page-content li,.page-content td,.page-content th')]; let selected = all.filter(el => r.intersectsNode(el)); if (r.collapsed) {
         const node = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
         const block = node.closest('p,h1,h2,h3,blockquote,li,td,th');
         selected = block ? [block] : [];
-    } return selected.filter(el => !selected.some(other => other !== el && el.contains(other))); }
+    } const deepest = selected.filter(el => !selected.some(other => other !== el && el.contains(other))); const identities = new Set(deepest.map(el => el.dataset.uthId).filter(Boolean)); return all.filter(el => deepest.includes(el) || identities.has(el.dataset.uthId)); }
     setBlockStyle(style) { this.transaction('paragraph', () => { for (const b of this.blocks())
         Object.assign(b.style, style); }); }
     setBlock(tag) { this.transaction('style', () => { const mark = bookmarkSelection(this.root); for (const b of this.blocks()) {
@@ -607,13 +618,15 @@ export class EditorEngine extends Emitter {
             n.className = 'cover-title';
         if (b.dataset.flow)
             n.dataset.flow = b.dataset.flow;
+        for (const attr of ['data-uth-id', 'data-uth-offset', 'data-uth-grounding']) if (b.hasAttribute(attr)) n.setAttribute(attr, b.getAttribute(attr));
         b.replaceWith(n);
     } restoreBookmark(this.root, mark); }); }
-    list(ordered = false) { this.transaction('list', () => { const blocks = this.blocks(); if (!blocks.length)
-        return; const mark = bookmarkSelection(this.root); if (blocks.every(b => b.tagName === 'LI')) {
+    list(ordered = false) { this.transaction('list', () => { const mark = bookmarkSelection(this.root); this.grounding.joinFragments(); restoreBookmark(this.root, mark); const blocks = this.blocks(); if (!blocks.length)
+        return; if (blocks.every(b => b.tagName === 'LI')) {
         for (const b of blocks) {
             const list = b.parentElement;
             const p = document.createElement('p');
+            for (const attr of ['data-uth-id', 'data-uth-offset', 'data-uth-grounding']) if (b.hasAttribute(attr)) p.setAttribute(attr, b.getAttribute(attr));
             p.append(...b.childNodes);
             list.parentElement.insertBefore(p, list);
             b.remove();
@@ -632,6 +645,7 @@ export class EditorEngine extends Emitter {
                 b.before(list);
             }
             const li = document.createElement('li');
+            for (const attr of ['data-uth-id', 'data-uth-offset', 'data-uth-grounding']) if (b.hasAttribute(attr)) li.setAttribute(attr, b.getAttribute(attr));
             li.append(...b.childNodes);
             list.append(li);
             b.remove();
@@ -642,6 +656,9 @@ export class EditorEngine extends Emitter {
     insertHTML(html, { block = false, kind = 'insert' } = {}) {
         this.transaction(kind, () => {
             const r = this.range();
+            const boundary = block ? this.grounding.boundary(r) : null;
+            const sibling = boundary && (boundary.start || boundary.end) && !boundary.el.closest('td,th,li');
+            if (!sibling) this.grounding.invalidateRange(r, 'insertText');
             this.deleteSelection(r);
             const box = document.createElement('div');
             box.innerHTML = html;
@@ -650,7 +667,11 @@ export class EditorEngine extends Emitter {
                 return;
             const fragment = document.createDocumentFragment();
             fragment.append(...box.childNodes);
-            if (block) {
+            if (sibling) {
+                if (boundary.start) boundary.el.before(fragment); else boundary.el.after(fragment);
+                caretAt(last);
+            }
+            else if (block) {
                 const node = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
                 let parent = node.closest('.page-content > *');
                 if (parent) {
@@ -704,6 +725,25 @@ export class EditorEngine extends Emitter {
             e.preventDefault();
             this.toggleMark(formats[e.inputType]);
             return;
+        }
+        if (e.inputType === 'insertParagraph' && !this.composing) {
+            this.commit('typing', true);
+            const boundary = this.grounding.boundary(this.range());
+            if (boundary && (boundary.start || boundary.end) && !boundary.el.closest('td,th') && !boundary.el.querySelector('li')) {
+                e.preventDefault();
+                this.transaction('paragraph insert', () => {
+                    const node = document.createElement(boundary.el.tagName === 'LI' ? 'li' : 'p'); node.innerHTML = '<br>';
+                    if (boundary.start) boundary.el.before(node); else boundary.el.after(node);
+                    caretAt(node, false);
+                });
+                return;
+            }
+        }
+        if (e.inputType?.startsWith('insert') || e.inputType?.startsWith('delete')) {
+            this.commit('typing', true);
+            this.grounding.invalidateRange(this.range(), e.inputType);
+            this.handlingInput = true;
+            queueMicrotask(() => { this.handlingInput = false; });
         }
         if (!this.composing && e.cancelable) {
             const range = this.range();
@@ -785,8 +825,26 @@ export class EditorEngine extends Emitter {
             n.remove();
     } }); }
     paste(e) { e.preventDefault(); if (this.readOnly)
-        return; const html = e.clipboardData?.getData('text/html'); const text = e.clipboardData?.getData('text/plain') || ''; const safe = html ? sanitizeHTML(html) : escapeHTML(text).split(/\r?\n/).map(t => `<p>${t || '<br>'}</p>`).join(''); if (!safe)
+        return; const html = e.clipboardData?.getData('text/html'); const text = e.clipboardData?.getData('text/plain') || ''; const copied = this.grounding.copiedHTML(e.clipboardData?.getData('application/x-uthereal-word-copy') || e.clipboardData?.getData('web application/x-uthereal-word-copy')); const safe = copied || (html ? sanitizeHTML(html) : escapeHTML(text).split(/\r?\n/).map(t => `<p>${t || '<br>'}</p>`).join('')); if (!safe)
         return; const block = /<(p|h[1-6]|div|table|ul|ol)[\s>]/i.test(safe); this.insertHTML(safe, { block, kind: 'paste' }); }
+    async copyToClipboard() {
+        const payload = this.grounding.copy();
+        if (navigator.clipboard.write && globalThis.ClipboardItem) {
+            const types = { 'text/plain': new Blob([payload.text], { type: 'text/plain' }), 'text/html': new Blob([payload.html], { type: 'text/html' }) };
+            if (payload.handle) types['web application/x-uthereal-word-copy'] = new Blob([payload.handle], { type: 'application/x-uthereal-word-copy' });
+            try { await navigator.clipboard.write([new ClipboardItem(types)]); }
+            catch { delete types['web application/x-uthereal-word-copy']; await navigator.clipboard.write([new ClipboardItem(types)]); }
+        } else await navigator.clipboard.writeText(payload.text);
+        return payload;
+    }
+    async pasteFromClipboard() {
+        if (navigator.clipboard.read) {
+            const values = new Map();
+            for (const item of await navigator.clipboard.read()) for (const type of item.types) if (['text/plain', 'text/html', 'application/x-uthereal-word-copy', 'web application/x-uthereal-word-copy'].includes(type)) values.set(type, await (await item.getType(type)).text());
+            if (values.size) { this.paste({ preventDefault() {}, clipboardData: { getData: type => values.get(type) || '' } }); return true; }
+        } else { const text = await navigator.clipboard.readText(); if (text) { this.insertText(text); return true; } }
+        return false;
+    }
     destroy() { this.pendingCommit.cancel(); document.removeEventListener('selectionchange', this.onSelection); }
 }
 export class DocumentSearch {
