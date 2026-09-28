@@ -2,5 +2,6 @@
   {"name":"UTF-16 emoji, combining mark, NBSP, inline format and BR","html":"<p>A<strong>🧭</strong>é&nbsp;B<br>C</p>","texts":["A🧭é BC"],"spans":[{"unit":0,"start":1,"end":3,"quote":"🧭"},{"unit":0,"start":3,"end":5,"quote":"é"}]},
   {"name":"List item owns its inline text and excludes nested item","html":"<ul><li>Parent<strong> one</strong><ul><li>Child 🧭</li></ul>tail</li><li>Next</li></ul>","texts":["Parent onetail","Child 🧭","Next"],"spans":[{"unit":0,"start":0,"end":14,"quote":"Parent onetail"},{"unit":1,"start":6,"end":8,"quote":"🧭"}]},
   {"name":"Cells own all paragraphs and nested table text","html":"<table><tr><td><p>A</p><p>B<br>C</p><table><tr><td>Inner</td></tr></table></td><th>D</th></tr></table>","texts":["ABCInner","D"],"spans":[{"unit":0,"start":3,"end":8,"quote":"Inner"}]},
-  {"name":"Literal whitespace is retained","html":"<h2> title </h2><p>line\n two\tthree</p><div>leaf <em>text</em></div>","texts":[" title ","line\n two\tthree","leaf text"],"spans":[{"unit":1,"start":4,"end":10,"quote":"\n two\t"}]}
+  {"name":"Literal whitespace is retained","html":"<h2> title </h2><p>line\n two\tthree</p><div>leaf <em>text</em></div>","texts":[" title ","line\n two\tthree","leaf text"],"spans":[{"unit":1,"start":4,"end":10,"quote":"\n two\t"}]},
+  {"name":"Explicit page break is layout only","html":"<p>First</p><div class=\"page-break\"></div><p>Second</p>","texts":["First","Second"],"spans":[{"unit":1,"start":0,"end":6,"quote":"Second"}]}
 ]
