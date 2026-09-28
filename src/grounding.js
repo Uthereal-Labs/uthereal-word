@@ -256,14 +256,20 @@ export class GroundingLifecycle {
         const patch = root => { for (const unit of logicalGroundingUnits(root)) {
             const next = [];
             for (const a of unit.grounding) {
-                const matches = item => {
+                const matches = (item, exact = true) => {
                     if (!sameOrigin(a.origin, item.submitted_origin)) return false;
+                    if (exact && (unit.object_id !== item.object_id || a.id !== item.annotation_id)) return false;
+                    // Submitted objects have their own canonical receipt. Only
+                    // copies created after submission may inherit a source receipt.
+                    if (!exact && (!submitted_snapshot || submitted.has(unit.object_id))) return false;
                     const source = submitted.get(item.object_id), annotation = source?.grounding.find(value => value.id === item.annotation_id);
                     if (source) return source.text === unit.text && annotation && sameOrigin(annotation.origin, item.submitted_origin) && equivalent(a, annotation);
-                    return unit.object_id === item.object_id && a.id === item.annotation_id;
+                    return !submitted_snapshot && exact && unit.object_id === item.object_id && a.id === item.annotation_id;
                 };
-                if (invalidations.some(matches)) { updated++; continue; }
-                const receipt = receipts.find(matches);
+                const exactInvalidation = invalidations.find(item => matches(item));
+                let receipt = receipts.find(item => matches(item));
+                if (exactInvalidation || (!receipt && invalidations.some(item => matches(item, false)))) { updated++; continue; }
+                receipt ||= receipts.find(item => matches(item, false));
                 if (receipt) { next.push({ ...a, origin: clone(receipt.origin) }); updated++; } else next.push(a);
             }
             for (const el of unit.elements) setAnnotations(el, next);

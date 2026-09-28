@@ -180,6 +180,34 @@ with sync_playwright() as p:
     print('PASS Race-safe acknowledgements across history/copy, import/export privacy', flush=True)
 
     page.evaluate('''() => {
+      resetGrounding('<p>Original supported 42</p><p>Destination</p>');const origin={kind:'saved',revision_id:'revision-before',association_id:'association-before'},original=groundUnit(0,origin),source=units()[0].object_id;
+      selectUnit(0);const copy=copyGrounding();selectUnit(1,11,11);pasteGrounding(copy);
+      const copied=units().find(unit=>unit.object_id!==source && unit.text==='Original supported 42'),snapshot=JSON.parse(JSON.stringify(quire.store.document));
+      const copyReceipt={object_id:copied.object_id,annotation_id:copied.grounding[0].id,submitted_origin:origin,origin:{kind:'saved',revision_id:'revision-after',association_id:'association-copy'}};
+      const originalReceipt={object_id:source,annotation_id:original.id,submitted_origin:origin,origin:{kind:'saved',revision_id:'revision-after',association_id:'association-original'}};
+      const history=quire.store.history.length,revision=quire.store.revision;
+      quire.grounding.ack({submitted_snapshot:snapshot,receipts:[copyReceipt,originalReceipt]});
+      check(units().find(unit=>unit.object_id===source).grounding[0].origin.association_id==='association-original','Original receives its exact canonical receipt even when copy receipt is first');
+      check(units().find(unit=>unit.object_id===copied.object_id).grounding[0].origin.association_id==='association-copy','Submitted copy receives its own canonical receipt');
+      check(quire.store.history.length===history && quire.store.revision===revision,'Exact receipt acknowledgement adds no content/history step');
+      quire.actions.undo();check(units().find(unit=>unit.object_id===source).grounding[0].origin.association_id==='association-original','Original history retains exact canonical receipt');
+      quire.actions.redo();check(units().find(unit=>unit.object_id===copied.object_id).grounding[0].origin.association_id==='association-copy','Copied history retains its own canonical receipt');
+
+      resetGrounding('<p>Original supported 42</p><p>Destination</p>');const pending=groundUnit(0,origin),pendingSource=units()[0].object_id,pendingSnapshot=JSON.parse(JSON.stringify(quire.store.document));
+      selectUnit(0);const during=copyGrounding();selectUnit(1,11,11);pasteGrounding(during);const inFlight=units().find(unit=>unit.object_id!==pendingSource && unit.text==='Original supported 42');
+      quire.grounding.ack({submitted_snapshot:pendingSnapshot,receipts:[{object_id:pendingSource,annotation_id:pending.id,submitted_origin:origin,origin:{kind:'saved',revision_id:'revision-inflight',association_id:'association-inflight'}}]});
+      check(units().find(unit=>unit.object_id===inFlight.object_id).grounding[0].origin.association_id==='association-inflight','Complete copy absent submitted snapshot inherits source canonical receipt');
+      check(quire.grounding.copiedHTML(during.getData('application/x-uthereal-word-copy')).includes('association-inflight'),'In-flight native clipboard retains canonical source provenance');
+
+      resetGrounding('<p>Original supported 42</p><p>Destination</p>');const unchanged=groundUnit(0,origin),unchangedSource=units()[0].object_id;
+      selectUnit(0);const another=copyGrounding();selectUnit(1,11,11);pasteGrounding(another);const submittedCopy=units().find(unit=>unit.object_id!==unchangedSource && unit.text==='Original supported 42'),incompleteSnapshot=JSON.parse(JSON.stringify(quire.store.document));
+      quire.grounding.ack({submitted_snapshot:incompleteSnapshot,receipts:[{object_id:submittedCopy.object_id,annotation_id:submittedCopy.grounding[0].id,submitted_origin:origin,origin:{kind:'saved',revision_id:'revision-copy-only',association_id:'association-copy-only'}}]});
+      check(units().find(unit=>unit.object_id===unchangedSource).grounding[0].origin.association_id==='association-before','Submitted original never falls back to another object receipt when its own is absent');
+      check(units().find(unit=>unit.object_id===submittedCopy.object_id).grounding[0].origin.association_id==='association-copy-only','Other submitted copy still accepts exact receipt');
+    }''')
+    print('PASS Canonical ACK selectors distinguish submitted originals/copies and preserve in-flight copy fallback', flush=True)
+
+    page.evaluate('''() => {
       resetGrounding('<p>Original 42</p><p>Other</p>');groundUnit(0);const before=JSON.stringify(quire.store.document),history=quire.store.history.length;
       const next=JSON.parse(before),box=document.createElement('div');box.innerHTML=next.pages[0].html;box.querySelector('p').textContent='Rewritten 42';next.pages[0].html=box.innerHTML;const object=units()[0].object_id;
       try{quire.grounding.applyDocument(next,[{object_id:object,annotations:[{id:'invalid',start:0,end:12,quote:'wrong'}]}]);throw Error('Invalid assignment accepted');}catch(error){check(!error.message.includes('accepted'),'Invalid assignment rejected');}
