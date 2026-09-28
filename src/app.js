@@ -1,14 +1,16 @@
+import { publicHTML } from './grounding.js';
 import { icon } from './icons.js';
-import { uid, escapeHTML, debounce, newDocument, DocumentStore, DocumentRepository, Paginator, EditorEngine, DocumentSearch, StatisticsWorker, bookmarkSelection, restoreBookmark, caretAt, safeURL, sanitizeHTML } from './core.js';
+import { uid, escapeHTML, debounce, newDocument, validateDocument, DocumentStore, DocumentRepository, Paginator, EditorEngine, DocumentSearch, StatisticsWorker, bookmarkSelection, restoreBookmark, caretAt, safeURL, sanitizeHTML } from './core.js';
 import { GPUPageRenderer } from './renderer.js';
 import { templates, clarityReport } from './templates.js';
 import { downloadFile, exportDocx, exportHTML, exportMarkdown, importFile } from './io.js';
 const $ = (s, root = document) => root.querySelector(s), $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const root = $('#page-stack'), viewport = $('#viewport'), ribbon = $('#ribbon'), modal = $('#modal'), popover = $('#popover');
 const repository = new DocumentRepository();
-let initial;
+let initial, incompatibleInitial = null;
 try {
     initial = await repository.current();
+    if (initial) { try { initial = validateDocument(initial); } catch (error) { incompatibleInitial = error.message; initial = null; } }
 }
 catch (error) {
     console.warn('Local storage unavailable:', error.message);
@@ -345,7 +347,7 @@ Object.assign(actions, {
         toast('Select text to copy.');
         return;
     } try {
-        await navigator.clipboard.writeText(text);
+        await editor.copyToClipboard();
         toast('Copied to clipboard.');
     }
     catch {
@@ -355,7 +357,7 @@ Object.assign(actions, {
         toast('Select text to cut.');
         return;
     } try {
-        await navigator.clipboard.writeText(text);
+        await editor.copyToClipboard();
         editor.transaction('cut', () => { editor.deleteSelection(editor.range()); });
         toast('Cut to clipboard.');
     }
@@ -363,9 +365,9 @@ Object.assign(actions, {
         toast('Use Ctrl+X or ⌘X to cut the selected text.');
     } },
     'paste': async () => { try {
-        const text = await navigator.clipboard.readText();
-        if (text)
-            editor.insertText(text);
+        const pasted = await editor.pasteFromClipboard();
+        if (pasted)
+            toast('Pasted from clipboard.');
         else
             toast('Your clipboard is empty.');
     }
@@ -471,7 +473,7 @@ Object.assign(actions, {
     } formModal('Clear this page’s ink', `<p>This removes all pen strokes from page ${currentPage}. You can undo the change.</p>`, () => { slot.ink = []; editor.commit('clear ink'); renderInk(); }, 'Clear ink'); },
     'export': anchor => { if (nativeExportBlocked()) return; showPopover(menuItem('export-docx', 'file', 'Word document', '.docx') + menuItem('export-quire', 'save', 'Document file', '.document') + menuItem('export-html', 'file', 'Web page', '.html') + menuItem('export-md', 'file', 'Markdown', '.md') + menuItem('export-txt', 'file', 'Plain text', '.txt') + '<hr>' + menuItem('print', 'print', 'Print / Save as PDF', 'Ctrl P'), anchor); },
     'more-tabs': anchor => { const expanded = anchor.getAttribute('aria-expanded') === 'true'; anchor.setAttribute('aria-expanded', String(!expanded)); anchor.setAttribute('aria-label', expanded ? 'Show more tabs' : 'Hide extra tabs'); $$('.ribbon-tabs [data-tab][hidden], .ribbon-tabs [data-tab].extra-tab').forEach(button => { button.hidden = expanded; button.classList.add('extra-tab'); }); anchor.classList.toggle('active', expanded && !['Home', 'Insert'].includes(activeTab)); },
-    'export-quire': () => { if (nativeExportBlocked()) return; editor.commit('typing', true); downloadFile(JSON.stringify(store.document, null, 2), store.document.title + '.document', 'application/json'); toast('Document exported.'); },
+    'export-quire': () => { if (nativeExportBlocked()) return; editor.commit('typing', true); downloadFile(JSON.stringify({ ...store.document, pages: store.document.pages.map(page => ({ ...page, html: publicHTML(page.html) })) }, null, 2), store.document.title + '.document', 'application/json'); toast('Document exported.'); },
     'export-docx': () => { if (nativeExportBlocked()) return; editor.commit('typing', true); downloadFile(exportDocx(store.document, root, referenceStack), store.document.title + '.docx'); toast('Word document exported. Advanced layout may differ.'); },
     'export-html': () => { if (nativeExportBlocked()) return; editor.commit('typing', true); downloadFile(exportHTML(store.document, root, referenceStack), store.document.title + '.html', 'text/html'); toast('Self-contained HTML document exported.'); },
     'export-md': () => { if (nativeExportBlocked()) return; downloadFile(exportMarkdown(root) + referenceMarkdown(), store.document.title + '.md', 'text/markdown'); toast('Markdown exported.'); },
@@ -621,8 +623,10 @@ document.addEventListener('click', async (e) => {
                 return;
             const doc = await repository.get(el.dataset.openDocument);
             if (doc) {
+                let checked;
+                try { checked = validateDocument(doc); } catch (error) { toast(error.message, true); return; }
                 closeModal(false);
-                store.replace(doc);
+                store.replace(checked);
                 viewport.scrollTop = 0;
             }
             return;
@@ -862,4 +866,5 @@ if (innerWidth < 1000)
     setZoom(Math.min(85, (viewport.clientWidth - 50) / store.document.layout.width * 100), false);
 await renderer.initialize();
 await saveNow();
-window.quire = { store, editor, paginator, renderer, search, repository, actions, statistics, createDocument: newDocument, importFile, sanitizeHTML, ready: true, get stats() { return stats; }, get reading() { return reading; }, get referenceRevision() { return referenceStack?.dataset.revision || null; }, setZoom, setReading, runSearch, setReferencePresentation, exportDocx: () => exportDocx(store.document, root, referenceStack), exportHTML: () => exportHTML(store.document, root, referenceStack), exportMarkdown: () => exportMarkdown(root) + referenceMarkdown() };
+if (incompatibleInitial) toast(incompatibleInitial, true);
+window.quire = { grounding: editor.grounding, store, editor, paginator, renderer, search, repository, actions, statistics, createDocument: newDocument, validateDocument, importFile, sanitizeHTML, ready: true, get stats() { return stats; }, get reading() { return reading; }, get referenceRevision() { return referenceStack?.dataset.revision || null; }, setZoom, setReading, runSearch, setReferencePresentation, exportDocx: () => exportDocx(store.document, root, referenceStack), exportHTML: () => exportHTML(store.document, root, referenceStack), exportMarkdown: () => exportMarkdown(root) + referenceMarkdown() };
