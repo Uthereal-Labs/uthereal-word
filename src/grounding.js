@@ -53,7 +53,17 @@ export function validateAnnotations(value, text) {
     if (!Array.isArray(value) || value.length > 1000) throw new Error('Invalid native grounding annotations.');
     const seen = new Set();
     return value.map(a => {
-        if (!a || !annotationId(a.id) || seen.has(a.id) || !Number.isInteger(a.start) || !Number.isInteger(a.end) || a.start < 0 || a.end <= a.start || a.end > text.length || typeof a.quote !== 'string' || a.quote.length > 32000 || text.slice(a.start, a.end) !== a.quote || !Array.isArray(a.claim_ids) || !a.claim_ids.length || a.claim_ids.length > 12 || !a.claim_ids.every(opaqueId) || new Set(a.claim_ids).size !== a.claim_ids.length || !['supports', 'derived'].includes(a.relation) || !validOrigin(a.origin)) throw new Error('Grounding must identify a valid quoted UTF-16 span and origin.');
+        if (!a || !annotationId(a.id) || seen.has(a.id)) throw new Error('Grounding annotation IDs must be valid and unique.');
+        if (!Number.isInteger(a.start) || !Number.isInteger(a.end) || a.start < 0 || a.end <= a.start || a.end > text.length || typeof a.quote !== 'string' || !a.quote.length || a.quote.length > 32000 || text.slice(a.start, a.end) !== a.quote) {
+            const start = typeof a.quote === 'string' && a.quote.length ? text.indexOf(a.quote) : -1;
+            const hint = start < 0 ? 'The quote is absent from the target object; inspect its current text.'
+                : text.indexOf(a.quote, start + 1) >= 0 ? 'The quote occurs more than once; inspect the target and select the intended occurrence.'
+                : `The exact quote occurs at UTF-16 [${start}, ${start + a.quote.length}); resubmit the intended annotation with those offsets.`;
+            throw new Error(`Grounding annotation ${a.id} does not match its quoted UTF-16 span. ${hint}`);
+        }
+        if (!Array.isArray(a.claim_ids) || !a.claim_ids.length || a.claim_ids.length > 12 || !a.claim_ids.every(opaqueId) || new Set(a.claim_ids).size !== a.claim_ids.length) throw new Error('Grounding claim IDs must be valid and unique.');
+        if (!['supports', 'derived'].includes(a.relation)) throw new Error('Invalid grounding relation.');
+        if (!validOrigin(a.origin)) throw new Error('Invalid grounding origin.');
         seen.add(a.id);
         return { id: a.id, start: a.start, end: a.end, quote: a.quote, claim_ids: [...a.claim_ids], relation: a.relation, origin: clone(a.origin) };
     });
