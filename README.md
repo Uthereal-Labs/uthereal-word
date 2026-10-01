@@ -120,7 +120,7 @@ The renderer can be inspected through the **About** dialog at the bottom of the 
 | `server.mjs` | Dependency-free local static server. |
 | `tests/test_editor.py` | Browser integration, file-format, and renderer-preparation checks. |
 
-Native documents carry `grounding_contract: 2`. Authored paragraphs/headings, list items, and cells have durable `data-uth-id` identities and optional `data-uth-grounding` annotations; paginated paragraph fragments repeat the logical identity and store `data-uth-offset` in UTF-16 units. A cell owns all descendant text; list-item text excludes nested items. Manual text edits invalidate the entire owning unit, while native Undo restores its recorded annotations. Complete same-artifact clipboard copies use an in-memory handle and allocate fresh object/annotation identities. Partial, external, and cross-artifact copies carry content only. Imported files receive fresh identities and no grounding; exports strip private grounding metadata. In-memory history is cleared on document load.
+Native documents carry `grounding_contract: 3`. Authored paragraphs/headings, list items, and cells have durable `data-uth-id` identities and optional `data-uth-grounding` annotations; paginated paragraph fragments repeat the logical identity and store `data-uth-offset` in UTF-16 units. A cell owns all descendant text; list-item text excludes nested items. Manual text edits invalidate the entire owning unit, while native Undo restores its recorded annotations. Complete same-artifact clipboard copies use an in-memory handle and allocate fresh object/annotation identities. Partial, external, and cross-artifact copies carry content only. Imported files receive fresh identities and no grounding; exports strip private grounding metadata. In-memory history is cleared on document load.
 
 The `quire.grounding` API exposes logical `inspect()`, validated `assign()`, atomic staged `applyDocument()`, and race-safe `ack()` methods. Save acknowledgements update matching live, history, and native clipboard annotations without replacing text or creating an Undo step. Evidence claims and provenance are validated by the hosting service.
 
@@ -236,3 +236,12 @@ The app does not send document content to a server. Its small static server only
 ## License
 
 MIT; see `LICENSE`. No Microsoft assets or font files are bundled.
+
+
+Citation declarations name the native object and may include an optional exact `passage`.
+`grounding.resolveAssignments(stagedDocument, assignments)` resolves against staged logical text
+and returns strict native annotations plus bounded diagnostics. A unique passage becomes
+`anchor: {scope: 'passage', quote, start, end}` with runtime UTF-16 offsets; absent or repeated
+passages retain `anchor: {scope: 'object'}` on the same object. Object anchors do not copy text.
+Unknown objects and invalid provenance remain errors. Internal loading requires contract 3;
+contract-2 resources must undergo explicit offline migration before loading.
