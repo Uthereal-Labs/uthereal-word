@@ -54,19 +54,47 @@ export function validateAnnotations(value, text) {
     const seen = new Set();
     return value.map(a => {
         if (!a || !annotationId(a.id) || seen.has(a.id)) throw new Error('Grounding annotation IDs must be valid and unique.');
-        if (!Number.isInteger(a.start) || !Number.isInteger(a.end) || a.start < 0 || a.end <= a.start || a.end > text.length || typeof a.quote !== 'string' || !a.quote.length || a.quote.length > 32000 || text.slice(a.start, a.end) !== a.quote) {
-            const start = typeof a.quote === 'string' && a.quote.length ? text.indexOf(a.quote) : -1;
-            const hint = start < 0 ? 'The quote is absent from the target object; inspect its current text.'
-                : text.indexOf(a.quote, start + 1) >= 0 ? 'The quote occurs more than once; inspect the target and select the intended occurrence.'
-                : `The exact quote occurs at UTF-16 [${start}, ${start + a.quote.length}); resubmit the intended annotation with those offsets.`;
-            throw new Error(`Grounding annotation ${a.id} does not match its quoted UTF-16 span. ${hint}`);
-        }
+        if (Object.keys(a).some(key => !['id', 'anchor', 'claim_ids', 'relation', 'origin'].includes(key))) throw new Error('Invalid native annotation fields.');
+        const anchor = validateCitationAnchor(a.anchor, text);
         if (!Array.isArray(a.claim_ids) || !a.claim_ids.length || a.claim_ids.length > 12 || !a.claim_ids.every(opaqueId) || new Set(a.claim_ids).size !== a.claim_ids.length) throw new Error('Grounding claim IDs must be valid and unique.');
         if (!['supports', 'derived'].includes(a.relation)) throw new Error('Invalid grounding relation.');
         if (!validOrigin(a.origin)) throw new Error('Invalid grounding origin.');
         seen.add(a.id);
-        return { id: a.id, start: a.start, end: a.end, quote: a.quote, claim_ids: [...a.claim_ids], relation: a.relation, origin: clone(a.origin) };
+        return { id: a.id, anchor, claim_ids: [...a.claim_ids], relation: a.relation, origin: clone(a.origin) };
     });
+}
+export function resolveAnnotationDeclarations(declarations, text) {
+    if (!Array.isArray(declarations)) throw new Error('Invalid native grounding declarations.');
+    const diagnostics = [];
+    const annotations = declarations.map(declaration => {
+        if (!declaration || typeof declaration !== 'object' || Array.isArray(declaration) ||
+            Object.keys(declaration).some(key => !['id', 'claim_ids', 'relation', 'origin', 'passage'].includes(key)))
+            throw new Error('Invalid native grounding declaration fields.');
+        let anchor = { scope: 'object' };
+        if (declaration.passage !== undefined) {
+            if (typeof declaration.passage !== 'string' || !declaration.passage.length || declaration.passage.length > 32000)
+                throw new Error('Invalid optional grounding passage.');
+            const start = text.indexOf(declaration.passage);
+            const reason = start < 0 ? 'passage_not_found' : text.indexOf(declaration.passage, start + 1) >= 0 ? 'passage_ambiguous' : null;
+            if (reason) {
+                if (diagnostics.length < 20) diagnostics.push({ annotation_id: declaration.id, reason, scope: 'object' });
+            } else anchor = { scope: 'passage', quote: declaration.passage, start, end: start + declaration.passage.length };
+        }
+        return { id: declaration.id, anchor, claim_ids: declaration.claim_ids, relation: declaration.relation, origin: declaration.origin };
+    });
+    return { annotations: validateAnnotations(annotations, text), diagnostics };
+}
+
+export function validateCitationAnchor(anchor, text) {
+    if (!anchor || typeof anchor !== 'object' || Array.isArray(anchor)) throw new Error('Invalid native citation anchor.');
+    const keys = Object.keys(anchor);
+    if (anchor.scope === 'object' && keys.length === 1) return { scope: 'object' };
+    if (anchor.scope !== 'passage' || keys.length !== 4 || !keys.every(key => ['scope', 'quote', 'start', 'end'].includes(key)) ||
+        !Number.isSafeInteger(anchor.start) || !Number.isSafeInteger(anchor.end) || anchor.start < 0 ||
+        anchor.end <= anchor.start || anchor.end > text.length || typeof anchor.quote !== 'string' ||
+        !anchor.quote.length || anchor.quote.length > 32000 || text.slice(anchor.start, anchor.end) !== anchor.quote)
+        throw new Error('Citation passage does not match its exact UTF-16 span.');
+    return { scope: 'passage', quote: anchor.quote, start: anchor.start, end: anchor.end };
 }
 export function stripGrounding(root) {
     for (const el of root.querySelectorAll('[data-uth-id],[data-uth-grounding],[data-uth-offset]')) for (const attr of privateAttrs) el.removeAttribute(attr);
@@ -151,7 +179,7 @@ export function documentGroundingUnits(doc) {
 export function normalizeDocumentGrounding(doc, { fresh = false } = {}) {
     const box = document.createElement('div');
     for (const page of doc.pages) { const content = document.createElement('div'); content.className = 'page-content'; content.innerHTML = page.html; box.append(content); }
-    normalizeGrounding(box, { fresh }); doc.pages.forEach((page, i) => { page.html = box.children[i].innerHTML; }); doc.grounding_contract = 2;
+    normalizeGrounding(box, { fresh }); doc.pages.forEach((page, i) => { page.html = box.children[i].innerHTML; }); doc.grounding_contract = 3;
     return doc;
 }
 function sameOrigin(a, b) {
@@ -231,9 +259,24 @@ export class GroundingLifecycle {
         finally { this.batchDepth--; }
         this.editor.commit(kind);
     }
+    resolveAssignments(staged, assignments) {
+        if (staged.grounding_contract !== 3 || staged.id !== this.editor.store.document.id) throw new Error('Native document identity or grounding contract mismatch.');
+        const next = clone(staged); normalizeDocumentGrounding(next);
+        const units = new Map(documentGroundingUnits(next).map(unit => [unit.object_id, unit]));
+        const seen = new Set(), diagnostics = [];
+        if (!Array.isArray(assignments) || assignments.length > 1000) throw new Error('Invalid grounding assignment batch.');
+        const resolved = assignments.map(item => {
+            if (!item || !units.has(item.object_id) || seen.has(item.object_id)) throw new Error('Unknown or duplicate grounding object.');
+            seen.add(item.object_id);
+            const result = resolveAnnotationDeclarations(item.annotations, units.get(item.object_id).text);
+            for (const diagnostic of result.diagnostics) if (diagnostics.length < 20) diagnostics.push({ object_id: item.object_id, ...diagnostic });
+            return { object_id: item.object_id, annotations: result.annotations };
+        });
+        return { assignments: resolved, diagnostics };
+    }
     applyDocument(staged, assignments = [], { validate = null } = {}) {
         if (this.editor.readOnly) throw new Error('Cannot edit a read-only document.');
-        if (staged.grounding_contract !== 2 || staged.id !== this.editor.store.document.id) throw new Error('Native document identity or grounding contract mismatch.');
+        if (staged.grounding_contract !== 3 || staged.id !== this.editor.store.document.id) throw new Error('Native document identity or grounding contract mismatch.');
         const next = clone(staged), previous = new Map(documentGroundingUnits(this.editor.store.document).map(unit => [unit.object_id, unit.text]));
         normalizeDocumentGrounding(next);
         const box = document.createElement('div');
@@ -262,7 +305,7 @@ export class GroundingLifecycle {
         if (submitted_snapshot && submitted_snapshot.id !== this.editor.store.document.id) return { updated: 0 };
         let updated = 0;
         const submitted = new Map(submitted_snapshot?.pages ? documentGroundingUnits(submitted_snapshot).map(unit => [unit.object_id, unit]) : []);
-        const equivalent = (a, b) => a.start === b.start && a.end === b.end && a.quote === b.quote && a.relation === b.relation && JSON.stringify(a.claim_ids) === JSON.stringify(b.claim_ids);
+        const equivalent = (a, b) => JSON.stringify(a.anchor) === JSON.stringify(b.anchor) && a.relation === b.relation && JSON.stringify(a.claim_ids) === JSON.stringify(b.claim_ids);
         const patch = root => { for (const unit of logicalGroundingUnits(root)) {
             const next = [];
             for (const a of unit.grounding) {

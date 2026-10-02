@@ -90,13 +90,13 @@ export class Emitter {
     emit(name, value) { this.handlers.get(name)?.forEach(fn => fn(value)); }
 }
 const cloneDocument = doc => ({ ...doc, layout: { ...doc.layout }, pages: doc.pages.map(p => ({ ...p, ink: (p.ink || []).map(s => ({ ...s, points: s.points.map(p => [...p]) })) })), comments: doc.comments.map(c => ({ ...c })), view: { ...doc.view } });
-export function newDocument(title = 'Untitled document', html = '<p><br></p>') { return normalizeDocumentGrounding({ schema: 'quire', version: 1, grounding_contract: 2, id: uid(), title, createdAt: new Date().toISOString(), modifiedAt: new Date().toISOString(), layout: { size: 'A4', orientation: 'portrait', width: 794, height: 1123, top: 70, bottom: 65, left: 74, right: 74, header: '', footer: true, accent: '#28766e', font: 'Segoe UI', fontSize: 14, lineHeight: 1.65 }, pages: [{ id: uid(), html: publicHTML(html), ink: [] }], comments: [], view: { zoom: 85 }, trackChanges: false }, { fresh: true }); }
+export function newDocument(title = 'Untitled document', html = '<p><br></p>') { return normalizeDocumentGrounding({ schema: 'quire', version: 1, grounding_contract: 3, id: uid(), title, createdAt: new Date().toISOString(), modifiedAt: new Date().toISOString(), layout: { size: 'A4', orientation: 'portrait', width: 794, height: 1123, top: 70, bottom: 65, left: 74, right: 74, header: '', footer: true, accent: '#28766e', font: 'Segoe UI', fontSize: 14, lineHeight: 1.65 }, pages: [{ id: uid(), html: publicHTML(html), ink: [] }], comments: [], view: { zoom: 85 }, trackChanges: false }, { fresh: true }); }
 const safeDate = value => { const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toISOString() : new Date().toISOString(); };
 const safeIdentifier = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(value) ? value : uid();
 export function validateDocument(value, { external = false } = {}) {
     if (!value || value.schema !== 'quire' || value.version !== 1 || !Array.isArray(value.pages) || value.pages.length > 1000)
         throw new Error('This is not a supported document file.');
-    if (!external && value.grounding_contract !== 2) throw new Error('This document requires the native grounding lifecycle format (contract 2).');
+    if (!external && value.grounding_contract !== 3) throw new Error('This document requires the native grounding lifecycle format (contract 3).');
     const base = newDocument();
     const d = { ...base, ...value, id: safeIdentifier(value.id), title: String(value.title || 'Untitled document').slice(0, 120), layout: { ...base.layout, ...value.layout }, comments: Array.isArray(value.comments) ? value.comments.slice(0, 5000).map(c => ({ id: safeIdentifier(c.id), text: String(c.text || '').slice(0, 20000), quote: String(c.quote || '').slice(0, 1000), author: String(c.author || 'You').slice(0, 100), time: safeDate(c.time), resolved: !!c.resolved })) : [], view: { ...base.view, ...value.view } };
     for (const k of ['width', 'height'])
@@ -140,7 +140,7 @@ export class DocumentStore extends Emitter {
         return false; this.future.push({ doc: cloneDocument(this.document), kind: this.lastKind }); const prev = this.history.pop(); this.document = prev.doc; this.lastKind = ''; this.revision++; this.emit('replace', { kind: 'undo' }); this.emit('change', { kind: 'undo', revision: this.revision }); return true; }
     redo() { if (!this.future.length)
         return false; this.history.push({ doc: cloneDocument(this.document), kind: 'redo' }); this.document = this.future.pop().doc; this.lastKind = ''; this.revision++; this.emit('replace', { kind: 'redo' }); this.emit('change', { kind: 'redo', revision: this.revision }); return true; }
-    replace(doc) { if (doc.grounding_contract !== 2) throw new Error('This document requires the native grounding lifecycle format (contract 2).'); this.document = doc; this.history = []; this.future = []; this.lastKind = ''; this.revision++; this.emit('replace', { kind: 'open' }); this.emit('change', { kind: 'open', revision: this.revision }); }
+    replace(doc) { if (doc.grounding_contract !== 3) throw new Error('This document requires the native grounding lifecycle format (contract 3).'); this.document = doc; this.history = []; this.future = []; this.lastKind = ''; this.revision++; this.emit('replace', { kind: 'open' }); this.emit('change', { kind: 'open', revision: this.revision }); }
 }
 export class DocumentRepository {
     constructor() { this.db = null; this.queue = Promise.resolve(); this.memory = new Map(); this.currentId = null; this.unavailable = false; }

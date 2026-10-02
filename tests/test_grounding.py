@@ -9,6 +9,7 @@ from playwright.sync_api import sync_playwright
 BASE = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument('--url', default='http://127.0.0.1:4173')
+parser.add_argument('--object-citations', action='store_true', help='Run lifecycle fixtures with object anchors')
 parser.add_argument('--adapter', help='Optional injected Cortex Word adapter path for real native bridge validation')
 args = parser.parse_args()
 with sync_playwright() as p:
@@ -24,7 +25,7 @@ with sync_playwright() as p:
       window.resetGrounding = html => { quire.setReading(false); quire.store.replace(quire.createDocument('Grounding fixture',html)); };
       window.units = () => quire.grounding.inspect();
       window.groundUnit = (index, origin = {kind:'saved',revision_id:'revision-a',association_id:'association-a'}) => {
-        const unit = units()[index]; const annotation = {id:crypto.randomUUID(),start:0,end:unit.text.length,quote:unit.text,claim_ids:['claim-a'],relation:'supports',origin};
+        const unit = units()[index]; const annotation = {id:crypto.randomUUID(),anchor:{scope:'passage',start:0,end:unit.text.length,quote:unit.text},claim_ids:['claim-a'],relation:'supports',origin};
         quire.grounding.assign([{object_id:unit.object_id,annotations:[annotation]}]); return annotation;
       };
       window.selectUnit = (index, start = 0, end = null) => {
@@ -38,6 +39,8 @@ with sync_playwright() as p:
       window.pasteGrounding = data => quire.editor.paste({preventDefault(){},clipboardData:data});
       window.check = (value,message) => { if(!value)throw Error(message); };
     }'''
+    if args.object_citations:
+        helpers = helpers.replace("anchor:{scope:'passage',start:0,end:unit.text.length,quote:unit.text}", "anchor:{scope:'object'}")
     page.evaluate(helpers)
 
     for fixture in json.loads((BASE/'tests/grounding-offset-fixtures.json').read_text()):
@@ -47,6 +50,27 @@ with sync_playwright() as p:
           for(const span of fixture.spans)check(current[span.unit].text.slice(span.start,span.end)===span.quote,'UTF-16 fixture span');
         }''', fixture)
     print('PASS Shared canonical text and UTF-16 fixtures', flush=True)
+    page.evaluate("""() => {
+      resetGrounding('<p>Original 42</p>');
+      const unit=units()[0], before=JSON.stringify(quire.store.document), staged=structuredClone(quire.store.document);
+      staged.pages[0].html=staged.pages[0].html.replace('Original 42','😀 Changed 42');
+      const declare=passage=>({object_id:unit.object_id,annotations:[{id:crypto.randomUUID(),claim_ids:['claim-a'],relation:'supports',origin:{kind:'saved',revision_id:'revision-a',association_id:'association-a'},...(passage===undefined?{}:{passage})}]});
+      const precise=quire.grounding.resolveAssignments(staged,[declare('Changed')]);
+      check(precise.assignments[0].annotations[0].anchor.start===3,'Staged Unicode passage offset');
+      const fallback=quire.grounding.resolveAssignments(staged,[declare('missing')]);
+      check(fallback.assignments[0].annotations[0].anchor.scope==='object' && fallback.diagnostics[0].reason==='passage_not_found','Passage mismatch falls back without retry');
+      check(JSON.stringify(quire.store.document)===before,'Resolution cannot mutate live content');
+      try{quire.grounding.resolveAssignments(staged,[{...declare(),object_id:'missing-object'}]);throw Error('Unknown object accepted');}catch(error){check(!error.message.includes('accepted'),'Unknown object rejects');}
+      quire.grounding.applyDocument(staged,fallback.assignments); quire.store.emit('replace',{kind:'agent'});
+      check(units()[0].grounding[0].anchor.scope==='object','Staged object citation persists');
+      resetGrounding('<table><tr><td>😀 240</td><td>Total 420</td></tr></table>');
+      const cell=units()[0],table=quire.grounding.resolveAssignments(quire.store.document,[{object_id:cell.object_id,annotations:declare('240').annotations}]);
+      check(table.assignments[0].annotations[0].anchor.start===3,'Canonical table-cell UTF-16 passage');
+      const scoped=quire.grounding.resolveAssignments(quire.store.document,[{object_id:cell.object_id,annotations:declare('Total').annotations}]);
+      check(scoped.assignments[0].annotations[0].anchor.scope==='object','No cross-cell quotation search');
+    }""")
+    print('PASS Staged Unicode passage resolution, nonblocking fallback and strict object identity', flush=True)
+
 
     page.evaluate('''() => {
       resetGrounding('<p>Qualified pilot 20%.</p><p>Unchanged context.</p><table><tr><td><p>Cell 42</p><p>Second sentence</p></td><td>Other cell</td></tr></table>');
@@ -210,9 +234,9 @@ with sync_playwright() as p:
     page.evaluate('''() => {
       resetGrounding('<p>Original 42</p><p>Other</p>');groundUnit(0);const before=JSON.stringify(quire.store.document),history=quire.store.history.length;
       const next=JSON.parse(before),box=document.createElement('div');box.innerHTML=next.pages[0].html;box.querySelector('p').textContent='Rewritten 42';next.pages[0].html=box.innerHTML;const object=units()[0].object_id;
-      try{quire.grounding.applyDocument(next,[{object_id:object,annotations:[{id:'invalid',start:0,end:12,quote:'wrong'}]}]);throw Error('Invalid assignment accepted');}catch(error){check(!error.message.includes('accepted'),'Invalid assignment rejected');}
+      try{quire.grounding.applyDocument(next,[{object_id:object,annotations:[{id:'invalid',anchor:{scope:'passage',start:0,end:12,quote:'wrong'}}]}]);throw Error('Invalid assignment accepted');}catch(error){check(!error.message.includes('accepted'),'Invalid assignment rejected');}
       check(JSON.stringify(quire.store.document)===before && quire.store.history.length===history,'Invalid annotation rolls back all prose');
-      const annotation={id:crypto.randomUUID(),start:0,end:12,quote:'Rewritten 42',claim_ids:['claim-a'],relation:'derived',origin:{kind:'agent',job_id:'job-a',steering_revision:0,sequence:1,declaration_id:'decl-a'}};
+      const annotation={id:crypto.randomUUID(),anchor:{scope:'passage',start:0,end:12,quote:'Rewritten 42'},claim_ids:['claim-a'],relation:'derived',origin:{kind:'agent',job_id:'job-a',steering_revision:0,sequence:1,declaration_id:'decl-a'}};
       quire.grounding.applyDocument(next,[{object_id:object,annotations:[annotation]}]);quire.store.emit('replace',{kind:'agent'});check(units()[0].grounding[0].id===annotation.id,'Explicit agent replacement retained');check(quire.store.history.length===history+1,'Content and annotations commit once');quire.actions.undo();check(units()[0].text==='Original 42' && units()[0].grounding.length===1,'Atomic Undo restores prior content and grounding');
     }''')
     print('PASS Atomic agent annotations and precommit validation', flush=True)
@@ -225,7 +249,7 @@ with sync_playwright() as p:
           });
         }''')
         page.evaluate('''async() => {
-          const connect=await bridgeRequest('connect');window.bridgeInstance=connect.result.instance_id;check(connect.result.capabilities.includes('grounding_lifecycle_v2'),'Bridge lifecycle capability');
+          const connect=await bridgeRequest('connect');window.bridgeInstance=connect.result.instance_id;check(connect.result.capabilities.includes('grounding_lifecycle_v3'),'Bridge lifecycle capability');
           resetGrounding('<p>Pilot may save 20%.</p><p>Preserved context.</p>');groundUnit(0);groundUnit(1,{kind:'saved',revision_id:'revision-a',association_id:'association-b'});
           const inspected=await bridgeRequest('inspect');check(inspected.ok && inspected.result.grounding_objects.length===2,'Logical bridge inspection');
           const target=inspected.result.blocks[0],text='Il pilota può risparmiare il 20%.',origin={kind:'agent',job_id:'job-a',steering_revision:0,sequence:1,declaration_id:'attempt:0'};
