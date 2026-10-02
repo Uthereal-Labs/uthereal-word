@@ -244,7 +244,18 @@ export class Paginator {
         const table = block.tagName === 'TABLE', original = block.cloneNode(true), items = table ? [...original.rows] : [...original.children];
         if (items.length < 2)
             return null;
-        const part = (from, to) => { const copy = original.cloneNode(true), children = table ? [...copy.rows] : [...copy.children]; children.forEach((child, i) => { if (i < from || i >= to)
+        const part = (from, to) => {
+            // Lists own inter-item text/comments too. Partition every child node once;
+            // removing only elements from two full clones duplicates their whitespace.
+            if (!table) {
+                const nodes = [...original.childNodes], start = from ? nodes.indexOf(items[from]) : 0, end = to < items.length ? nodes.indexOf(items[to]) : nodes.length;
+                const copy = original.cloneNode(false);
+                copy.append(...nodes.slice(start, end).map(node => node.cloneNode(true)));
+                if (copy.tagName === 'OL')
+                    copy.start = (original.start || 1) + from;
+                return copy;
+            }
+            const copy = original.cloneNode(true), children = [...copy.rows]; children.forEach((child, i) => { if (i < from || i >= to)
             child.remove(); }); if (table && from)
             copy.querySelector('caption')?.remove(); if (copy.tagName === 'OL')
             copy.start = (original.start || 1) + from; return copy; };

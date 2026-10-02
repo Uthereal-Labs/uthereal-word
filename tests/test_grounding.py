@@ -22,7 +22,7 @@ with sync_playwright() as p:
     page.goto(args.url + ('?utherealParentOrigin='+quote(origin,safe='') if args.adapter else ''), wait_until='networkidle')
     page.wait_for_function('window.quire?.ready')
     helpers = '''() => {
-      window.resetGrounding = html => { quire.setReading(false); quire.store.replace(quire.createDocument('Grounding fixture',html)); };
+      window.resetGrounding = html => { quire.setReading(false); quire.store.replace(quire.createDocument('Grounding fixture',html));document.querySelector('#viewport').scrollTop=0; };
       window.units = () => quire.grounding.inspect();
       window.groundUnit = (index, origin = {kind:'saved',revision_id:'revision-a',association_id:'association-a'}) => {
         const unit = units()[index]; const annotation = {id:crypto.randomUUID(),anchor:{scope:'passage',start:0,end:unit.text.length,quote:unit.text},claim_ids:['claim-a'],relation:'supports',origin};
@@ -101,25 +101,45 @@ with sync_playwright() as p:
     page.keyboard.insert_text('90')
     page.wait_for_timeout(400)
     page.evaluate('''async() => {
-      check(units()[0].grounding.length===0,'Manual whole paragraph invalidation');check(units()[1].grounding.length===1,'Other paragraph remains grounded');
+      check(units()[0].grounding.length===1,'Manual whole paragraph continuity');check(units()[1].grounding.length===1,'Other paragraph remains grounded');
       await quire.repository.save(quire.store.document);quire.actions.undo();check(units()[0].text==='Revenue 20%.','Undo content');check(units()[0].grounding.length===1,'Undo restores annotations after autosave');
-      quire.actions.redo();check(units()[0].grounding.length===0,'Redo invalidates again');selectUnit(0,8,10);
+      quire.actions.redo();check(units()[0].grounding.length===1,'Redo retains association');selectUnit(0,8,10);
     }''')
     page.keyboard.insert_text('20')
     page.wait_for_timeout(400)
-    page.evaluate("check(units()[0].text==='Revenue 20%.' && units()[0].grounding.length===0,'Manual retyping cannot resurrect provenance')")
+    page.evaluate("check(units()[0].text==='Revenue 20%.' && units()[0].grounding.length===1,'Manual retyping retains association intent')")
     print('PASS Native typing, autosave Undo/Redo, manual retyping', flush=True)
+
+    page.evaluate('''() => {
+      resetGrounding('<p>😀 EUR 240</p>');const object=units()[0].object_id;
+      const origin={kind:'saved',revision_id:'prior-revision',association_id:'prior-association'};
+      quire.grounding.assign([{object_id:object,annotations:[{id:'continuity-annotation',anchor:{scope:'passage',quote:'EUR 240',start:3,end:10},claim_ids:['claim-a'],relation:'supports',origin}]}]);
+      selectUnit(0,0,0);quire.editor.insertText('Prefix ');
+      check(units()[0].grounding[0].anchor.start===10,'Exact quote uniquely rebases in UTF16');
+      selectUnit(0,10,13);quire.editor.insertText('USD');
+      check(units()[0].grounding[0].anchor.scope==='object','Missing quote downgrades same-object citation');
+      check(units()[0].grounding[0].origin.association_id==='prior-association','Source lineage unchanged');
+      const submitted=JSON.parse(JSON.stringify(quire.store.document)),before=quire.store.revision;
+      quire.grounding.ack({submitted_snapshot:submitted,receipts:[{object_id:object,annotation_id:'continuity-annotation',submitted_origin:origin,origin:{kind:'saved',revision_id:'next-revision',association_id:'continuity-annotation'},anchor:{scope:'object'}}]});
+      check(quire.store.revision===before && units()[0].grounding[0].origin.revision_id==='next-revision','Canonical anchor/origin ACK has no revision mutation');
+      const staged=JSON.parse(JSON.stringify(quire.store.document));staged.pages[0].html=staged.pages[0].html.replace('USD','CHF');
+      quire.grounding.applyDocument(staged);quire.store.emit('replace',{kind:'agent'});
+      check(units()[0].grounding[0].id==='continuity-annotation','Agent same-object edit carries association');
+      quire.grounding.assign([{object_id:object,annotations:[]}]);check(units()[0].grounding.length===0,'Explicit removal wins over continuity');
+    }''')
+    print('PASS Manual and agent same-object continuity, passage rebasing and canonical ACK', flush=True)
+
 
     page.evaluate('''() => { resetGrounding('<table><tr><td><p>Cell 42</p><p>Other sentence</p></td><td>Keep</td></tr></table>');groundUnit(0);groundUnit(1,{kind:'saved',revision_id:'revision-a',association_id:'association-b'});selectUnit(0,5,7); }''')
     page.keyboard.insert_text('99')
     page.wait_for_timeout(400)
-    page.evaluate("check(units().length===2 && units()[0].grounding.length===0 && units()[1].grounding.length===1,'Cell owns all descendant paragraphs')")
+    page.evaluate("check(units().length===2 && units()[0].grounding.length===1 && units()[1].grounding.length===1,'Cell preserves associations across descendant edits')")
     page.evaluate('''() => {
       resetGrounding('<ul><li>Parent<ul><li>Nested 42</li></ul></li><li>Other</li></ul>');for(let i=0;i<3;i++)groundUnit(i,{kind:'saved',revision_id:'revision-a',association_id:'association-'+i});selectUnit(1,7,9);
     }''')
     page.keyboard.insert_text('99')
     page.wait_for_timeout(400)
-    page.evaluate("check(units()[0].grounding.length===1 && units()[1].grounding.length===0 && units()[2].grounding.length===1,'Nested list item invalidates its own unit')")
+    page.evaluate("check(units()[0].grounding.length===1 && units()[1].grounding.length===1 && units()[2].grounding.length===1,'Nested list item preserves its own association')")
     print('PASS Whole-cell ownership and nested list invalidation', flush=True)
 
     page.evaluate('''() => { resetGrounding('<p>First grounded</p><p>Second grounded</p>');groundUnit(0);groundUnit(1,{kind:'saved',revision_id:'revision-a',association_id:'association-b'});selectUnit(0,5,5); }''')
@@ -132,7 +152,7 @@ with sync_playwright() as p:
       resetGrounding('<p>IME 42</p><p>Keep</p>');groundUnit(0);groundUnit(1,{kind:'saved',revision_id:'revision-a',association_id:'association-b'});quire.store.history=[];selectUnit(0,4,6);
       const host=document.querySelector('#page-stack .page-content');host.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));
       const r=getSelection().getRangeAt(0);r.deleteContents();r.insertNode(document.createTextNode('四十二'));host.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertCompositionText',data:'四十二',isComposing:true}));host.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'四十二'}));
-      check(!units()[0].grounding.length && units()[1].grounding.length===1,'Composition invalidates owner');quire.actions.undo();check(units()[0].grounding.length===1,'IME Undo restores recorded annotations');
+      check(units()[0].grounding.length===1 && units()[1].grounding.length===1,'Composition retains association intent');quire.actions.undo();check(units()[0].grounding.length===1,'IME Undo restores recorded annotations');
     }''')
     print('PASS Enter/Backspace, browser normalization and IME transaction', flush=True)
 
@@ -192,7 +212,7 @@ with sync_playwright() as p:
       const snapshot=JSON.parse(JSON.stringify(quire.store.document));selectUnit(0);const copy=copyGrounding();selectUnit(1,5,5);pasteGrounding(copy);
       selectUnit(0,18,20);quire.editor.insertText('99');const history=quire.store.history.length,revision=quire.store.revision;
       const receipt={object_id:target,annotation_id:a.id,submitted_origin:origin,origin:{kind:'saved',revision_id:'revision-new',association_id:'association-new'}};
-      quire.grounding.ack({receipts:[receipt],submitted_snapshot:snapshot});check(!units()[0].grounding.length,'Late save cannot resurrect manually invalidated live annotation');check(quire.store.history.length===history && quire.store.revision===revision,'Ack has no history step or content revision');
+      quire.grounding.ack({receipts:[receipt],submitted_snapshot:snapshot});check(units()[0].grounding[0].origin.kind==='agent','Late save cannot overwrite newer live association intent');check(quire.store.history.length===history && quire.store.revision===revision,'Ack has no history step or content revision');
       check(units().find(u=>u.object_id!==target && u.text==='Pending supported 42').grounding[0].origin.kind==='saved','Ack updates exact complete copy');
       quire.actions.undo();check(units()[0].grounding[0].origin.revision_id==='revision-new','Ack updates restored history');
       const again=quire.grounding.copiedHTML(copy.getData('application/x-uthereal-word-copy'));check(again.includes('revision-new'),'Ack updates native clipboard record');
@@ -257,27 +277,34 @@ with sync_playwright() as p:
           const payload={expected_engine_revision:inspected.result.engine_revision,operations:[{op:'replace_text',target,start:0,end:target.raw_text.length,expected_text:target.raw_text,text}],grounding_assignments:[{object_id:target.object_id,annotations:[{...annotation,quote:'invalid'}]}]};
           const before=JSON.stringify(quire.store.document),history=quire.store.history.length,failed=await bridgeRequest('apply',payload);
           check(!failed.ok && failed.error_phase==='precommit','Invalid grounding fails before commit');check(JSON.stringify(quire.store.document)===before && quire.store.history.length===history,'Bridge invalid assignment leaves prose untouched');
-          payload.grounding_assignments[0].annotations=[annotation];const applied=await bridgeRequest('apply',payload);check(applied.ok,'Real native bridge apply: '+applied.error);
+          payload.grounding_assignments[0].annotations=[{id:annotation.id,passage:text,claim_ids:annotation.claim_ids,relation:annotation.relation,origin}];const applied=await bridgeRequest('apply',payload);check(applied.ok,'Real native bridge apply: '+applied.error);
           check(units()[0].text===text && units()[0].grounding[0].id===annotation.id && units()[1].grounding.length===1,'Agent content and support commit together');check(quire.store.history.length===history+1,'One native bridge history step');
           const snapshot=JSON.parse(JSON.stringify(quire.store.document)),ack=await bridgeRequest('ack_grounding',{submitted_snapshot:snapshot,receipts:[{object_id:target.object_id,annotation_id:annotation.id,submitted_origin:origin,origin:{kind:'saved',revision_id:'revision-bridge',association_id:'association-bridge'}}]});check(ack.ok && units()[0].grounding[0].origin.kind==='saved','Bridge canonical acknowledgement');
           const current=await bridgeRequest('inspect'),only=await bridgeRequest('apply',{expected_engine_revision:current.result.engine_revision,operations:[],grounding_assignments:[{object_id:target.object_id,annotations:[]}]});check(only.ok && !units()[0].grounding.length,'Annotation-only native bridge apply');
           quire.actions.undo();check(units()[0].grounding[0].origin.kind==='saved','Annotation-only bridge Undo');
+          resetGrounding('<p>Existing supported object.</p>');groundUnit(0);const original=units()[0].object_id;
+          let baseline=await bridgeRequest('inspect');const appended=await bridgeRequest('apply',{expected_engine_revision:baseline.result.engine_revision,operations:[{op:'append_html',page:0,html:'<p>Exact generated object.</p>'}]});
+          check(appended.ok && appended.result.created_objects.length===1 && appended.result.created_objects[0].operation_index===0,'Native bridge maps exact generated operation targets');
+          check(units().some(unit=>unit.object_id===appended.result.created_objects[0].object_id && unit.text==='Exact generated object.'),'Created object mapping resolves the committed object');
+          baseline=await bridgeRequest('inspect');const replacement=await bridgeRequest('apply',{expected_engine_revision:baseline.result.engine_revision,operations:[{op:'replace_block',target:baseline.result.blocks[0],html:'<h2>Edited same object.</h2>'}]});
+          check(replacement.ok && units()[0].object_id===original && units()[0].grounding.length===1,'Single-owner block replacement preserves exact identity and association');
+          check(replacement.result.grounding_feedback.retained===1,'Native working-state receipt records retained association');
           const read=await bridgeRequest('read'),legacy=await bridgeRequest('load',{content:{...read.result,grounding_contract:undefined}});check(!legacy.ok && legacy.error==='GROUNDING_CONTRACT_INCOMPATIBLE','Internal loads enforce hard cut');
         }''')
         print('PASS Real Cortex bridge capability, staged atomic edit, annotations-only apply, ack and hard cut', flush=True)
         page.evaluate('''async() => {
           window.sourceClicks=[];addEventListener('message',event=>{if(event.data?.event==='view-sources')sourceClicks.push(event.data);});
           const text=Array.from({length:1500},(_,i)=>'sourceword'+i).join(' ');resetGrounding('<p>'+text+'</p>');groundUnit(0);const object=units()[0].object_id;
-          const markers=[{anchor:{kind:'quire',object_id:object,page_id:'deliberately-wrong',block_path:[999],start:0,end:text.length,quote:text}}];
+          const markers=[{anchor:{kind:'quire',object_id:object,page_id:'deliberately-wrong',block_path:[999],...units()[0].grounding[0].anchor}}];
           const initial=await bridgeRequest('set_grounding_markers',{markers});check(initial.ok && initial.result.rendered===1,'One source group for a logical paragraph spanning pages');
           const previousFragments=units()[0].locations.length;quire.store.document.layout.height=800;document.documentElement.style.setProperty('--paper-height','800px');quire.paginator.reflow();quire.store.document.pages=quire.paginator.getPages();check(units()[0].locations.length>previousFragments,'Fixture changes actual pagination');
           document.querySelectorAll('#page-stack .paper-slot')[1].scrollIntoView({block:'center'});const after=await bridgeRequest('set_grounding_markers',{markers});check(after.result.rendered===1,'Source marker resolves object after repagination independent of old page/path');
-          document.querySelector('button[aria-label="View sources for paragraph"]').click();await new Promise(resolve=>setTimeout(resolve,20));check(sourceClicks.at(-1).targets.length===1 && sourceClicks.at(-1).targets[0].object_id===object,'Source click emits exact logical object ID');
+          document.querySelector('button[aria-label="View sources for paragraph"]').click();await new Promise(resolve=>setTimeout(resolve,20));check(sourceClicks.at(-1).target.selections.length===1 && sourceClicks.at(-1).target.selections[0].object_id===object,'Source click emits exact logical object ID');
           resetGrounding('<table><tr><td>One 42</td><td>Two 50</td></tr><tr><td>Three 60</td><td>Four 70</td></tr></table>');for(let i=0;i<4;i++)groundUnit(i,{kind:'saved',revision_id:'revision-a',association_id:'cell-'+i});
-          const cells=units(),tableMarkers=cells.map(unit=>({anchor:{kind:'quire',object_id:unit.object_id,start:0,end:unit.text.length,quote:unit.text}}));
+          const cells=units(),tableMarkers=cells.map(unit=>({anchor:{kind:'quire',object_id:unit.object_id,start:0,end:unit.text.length,...unit.grounding[0].anchor}}));
           const grouped=await bridgeRequest('set_grounding_markers',{markers:tableMarkers});check(grouped.result.rendered===1,'Cell associations aggregate into one table source sparkle');
-          document.querySelector('button[aria-label="View sources for table"]').click();await new Promise(resolve=>setTimeout(resolve,20));check(sourceClicks.at(-1).targets.length===4 && sourceClicks.at(-1).targets.every(target=>cells.some(cell=>cell.object_id===target.object_id)),'Table source click emits each cited cell identity');
-          selectUnit(0,0,1);quire.editor.insertText('Changed');const stale=await bridgeRequest('set_grounding_markers',{markers:tableMarkers.slice(0,1)});check(stale.result.rendered===0,'Manually invalidated object cannot show stale source sparkle');
+          document.querySelector('button[aria-label="View sources for table"]').click();await new Promise(resolve=>setTimeout(resolve,20));check(sourceClicks.at(-1).target.selections.length===4 && sourceClicks.at(-1).target.selections.every(target=>cells.some(cell=>cell.object_id===target.object_id)),'Table source click emits each cited cell identity');
+          selectUnit(0,0,1);quire.editor.insertText('Changed');const stale=await bridgeRequest('set_grounding_markers',{markers:tableMarkers.slice(0,1)});check(stale.result.rendered===1,'Same-object edit preserves the source association marker');
         }''')
         print('PASS Repaginated paragraph source marker and table sparkle grouping with exact object clicks', flush=True)
 

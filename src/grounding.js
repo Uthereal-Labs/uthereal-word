@@ -96,6 +96,25 @@ export function validateCitationAnchor(anchor, text) {
         throw new Error('Citation passage does not match its exact UTF-16 span.');
     return { scope: 'passage', quote: anchor.quote, start: anchor.start, end: anchor.end };
 }
+/** Rebase passage precision on the same logical object; preserve association intent. */
+function continueAnnotations(value, text) {
+    const continued = value.map(annotation => {
+        const anchor = annotation.anchor;
+        if (anchor?.scope !== 'passage') return annotation;
+        // Validate the original anchor shape independently of the edited text.
+        if (Object.keys(anchor).length !== 4 || !Object.keys(anchor).every(key => ['scope', 'quote', 'start', 'end'].includes(key)) ||
+            typeof anchor.quote !== 'string' || !anchor.quote.length || anchor.quote.length > 32000 ||
+            !Number.isSafeInteger(anchor.start) || !Number.isSafeInteger(anchor.end) || anchor.start < 0 || anchor.end <= anchor.start || anchor.end - anchor.start !== anchor.quote.length)
+            throw new Error('Invalid original citation passage.');
+        if (text.slice(anchor.start, anchor.end) === anchor.quote) return annotation;
+        const start = text.indexOf(anchor.quote);
+        const next = start >= 0 && text.indexOf(anchor.quote, start + 1) < 0
+            ? { scope: 'passage', quote: anchor.quote, start, end: start + anchor.quote.length }
+            : { scope: 'object' };
+        return { ...annotation, anchor: next };
+    });
+    return validateAnnotations(continued, text);
+}
 export function stripGrounding(root) {
     for (const el of root.querySelectorAll('[data-uth-id],[data-uth-grounding],[data-uth-offset]')) for (const attr of privateAttrs) el.removeAttribute(attr);
     return root;
@@ -152,7 +171,7 @@ export function normalizeGrounding(root, { fresh = false } = {}) {
         let offset = 0;
         for (const el of unit.elements) { el.dataset.uthOffset = String(offset); offset += objectText(el).length; }
         let value = unit.grounding;
-        try { value = validateAnnotations(value, unit.text); } catch { value = []; }
+        try { value = continueAnnotations(value, unit.text); } catch { value = []; }
         for (const el of unit.elements) setAnnotations(el, value);
     }
     return root;
@@ -189,11 +208,21 @@ function sameOrigin(a, b) {
 }
 export class GroundingLifecycle {
     constructor(editor) { this.editor = editor; this.clipboard = null; this.assigned = new Set(); this.batchDepth = 0; }
+    retainObjectIdentity(source, replacements) {
+        if (replacements.length !== 1 || replacements[0].nodeType !== Node.ELEMENT_NODE) return;
+        const probe = document.createElement('div'); probe.append(replacements[0].cloneNode(true));
+        const owners = groundingElements(probe);
+        if (owners.length !== 1 || owners[0] !== probe.firstElementChild) return;
+        for (const attr of [...privateAttrs, 'data-flow']) {
+            const value = source.getAttribute(attr);
+            if (value !== null) replacements[0].setAttribute(attr, value);
+        }
+    }
+    normalizeDocument(staged) { return normalizeDocumentGrounding(staged); }
+    inspectDocument(staged) { return documentGroundingUnits(staged).map(({ elements, ...unit }) => clone(unit)); }
     inspect() { normalizeGrounding(this.editor.root); return logicalGroundingUnits(this.editor.root).map(({ elements, ...unit }) => clone(unit)); }
     reconcile() {
         normalizeGrounding(this.editor.root);
-        const previous = new Map(documentGroundingUnits(this.editor.store.document).map(unit => [unit.object_id, unit.text]));
-        for (const unit of logicalGroundingUnits(this.editor.root)) if (previous.has(unit.object_id) && previous.get(unit.object_id) !== unit.text && !this.assigned.has(unit.object_id)) for (const el of unit.elements) el.removeAttribute('data-uth-grounding');
     }
     joinFragments() {
         for (const unit of logicalGroundingUnits(this.editor.root)) {
@@ -229,7 +258,9 @@ export class GroundingLifecycle {
                 if (inputType.includes('Forward') && at === el.textContent.length && index >= 0 && index < units.length - 1) selected.add(units[index + 1].object_id);
             }
         } else for (const unit of units) if (unit.elements.some(el => ownedTextNodes(el).some(node => intersectsText(range, node)))) selected.add(unit.object_id);
-        for (const unit of units) if (selected.has(unit.object_id)) for (const el of unit.elements) el.removeAttribute('data-uth-grounding');
+        // A deletion joining distinct authored objects has no unambiguous identity mapping.
+        if (inputType.startsWith('delete') && selected.size > 1)
+            for (const unit of units) if (selected.has(unit.object_id)) for (const el of unit.elements) el.removeAttribute('data-uth-grounding');
     }
     assign(assignments, { commit = true } = {}) {
         if (this.editor.readOnly) throw new Error('Cannot annotate a read-only document.');
@@ -277,12 +308,11 @@ export class GroundingLifecycle {
     applyDocument(staged, assignments = [], { validate = null } = {}) {
         if (this.editor.readOnly) throw new Error('Cannot edit a read-only document.');
         if (staged.grounding_contract !== 3 || staged.id !== this.editor.store.document.id) throw new Error('Native document identity or grounding contract mismatch.');
-        const next = clone(staged), previous = new Map(documentGroundingUnits(this.editor.store.document).map(unit => [unit.object_id, unit.text]));
+        const next = clone(staged);
         normalizeDocumentGrounding(next);
         const box = document.createElement('div');
         for (const page of next.pages) { const content = document.createElement('div'); content.className = 'page-content'; content.innerHTML = page.html; box.append(content); }
         const units = new Map(logicalGroundingUnits(box).map(unit => [unit.object_id, unit]));
-        for (const unit of units.values()) if (previous.has(unit.object_id) && previous.get(unit.object_id) !== unit.text) for (const el of unit.elements) el.removeAttribute('data-uth-grounding');
         if (!Array.isArray(assignments) || assignments.length > 1000) throw new Error('Invalid grounding assignment batch.');
         const seen = new Set(), annotationIds = new Set();
         const prepared = assignments.map(item => {
@@ -305,6 +335,10 @@ export class GroundingLifecycle {
         if (submitted_snapshot && submitted_snapshot.id !== this.editor.store.document.id) return { updated: 0 };
         let updated = 0;
         const submitted = new Map(submitted_snapshot?.pages ? documentGroundingUnits(submitted_snapshot).map(unit => [unit.object_id, unit]) : []);
+        for (const receipt of receipts) if (receipt.anchor) {
+            const source = submitted.get(receipt.object_id) || logicalGroundingUnits(this.editor.root).find(unit => unit.object_id === receipt.object_id);
+            validateCitationAnchor(receipt.anchor, source?.text ?? '');
+        }
         const equivalent = (a, b) => JSON.stringify(a.anchor) === JSON.stringify(b.anchor) && a.relation === b.relation && JSON.stringify(a.claim_ids) === JSON.stringify(b.claim_ids);
         const patch = root => { for (const unit of logicalGroundingUnits(root)) {
             const next = [];
@@ -323,7 +357,7 @@ export class GroundingLifecycle {
                 let receipt = receipts.find(item => matches(item));
                 if (exactInvalidation || (!receipt && invalidations.some(item => matches(item, false)))) { updated++; continue; }
                 receipt ||= receipts.find(item => matches(item, false));
-                if (receipt) { next.push({ ...a, origin: clone(receipt.origin) }); updated++; } else next.push(a);
+                if (receipt) { next.push({ ...a, ...(receipt.anchor ? { anchor: validateCitationAnchor(receipt.anchor, unit.text) } : {}), origin: clone(receipt.origin) }); updated++; } else next.push(a);
             }
             for (const el of unit.elements) setAnnotations(el, next);
         } };

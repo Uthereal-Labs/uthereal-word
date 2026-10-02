@@ -130,6 +130,24 @@ with sync_playwright() as p:
    if tag=='ol':check(evaluate("[...document.querySelectorAll('#page-stack ol')].slice(1).every(n=>n.start>1)"))
  record('Large tables and lists paginate at row/item boundaries without text loss',structured_pagination)
 
+ def list_whitespace_pagination():
+  for tag in ['ul','ol']:
+   items=['<li data-uth-id="item-'+str(i)+'"><span>Item '+str(i)+' </span><a href="https://example.com/evidence">linked evidence</a> with inline spaces.</li>' for i in range(130)]
+   html='<'+tag+' start="4">\n  '+'\n  <!-- separator -->\n  '.join(items)+'\n</'+tag+'>'
+   expected=evaluate("html=>{const box=document.createElement('div');box.innerHTML=html;return box.textContent}",html)
+   reset(html)
+   check(evaluate('quire.store.document.pages.length')>1)
+   check(text()==expected,'List whitespace changed on first pagination')
+   before=evaluate("[...document.querySelectorAll('#page-stack li')].map(li=>({id:li.dataset.uthId,html:li.innerHTML}))")
+   for iteration in range(3):
+    evaluate('quire.paginator.reflow()')
+    check(text()==expected,'List whitespace changed on repeated pagination')
+    check(evaluate("[...document.querySelectorAll('#page-stack li')].map(li=>({id:li.dataset.uthId,html:li.innerHTML}))")==before,'List IDs, links or inline spaces changed')
+   if tag=='ol':check(evaluate("[...document.querySelectorAll('#page-stack ol')].map(list=>list.start).every((start,i,all)=>i===0?start===4:start>all[i-1])"),'Ordered list numbering changed')
+  return {'tags':['ul','ol'],'items':130,'repeated_reflows':3}
+ record('List splits preserve exact inter-item whitespace, inline spaces, links and IDs',list_whitespace_pagination)
+
+
  def equation_chart():
   reset();caret_end();ribbon_tab('Insert');action('equation');page.locator('#equation').fill('E = mc²');page.locator('#modal button[type=submit]').click();check('E = mc²' in text());action('chart');page.locator('#modal button[type=submit]').click();check(page.locator('#page-stack img').count()==1)
  record('Unicode equations and data-driven chart images',equation_chart)
